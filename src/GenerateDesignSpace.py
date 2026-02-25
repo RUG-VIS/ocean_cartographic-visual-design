@@ -27,9 +27,11 @@ plt.rcParams.update({
 # -----------------------------------------------------------------------------
 # General Parameters
 # -----------------------------------------------------------------------------
-input_netcdf = "shorelinetest1.nc"   # Path to input elevation data
-input_netcdf2 = "metoffice_foam1_amm7_NWS_SSC_hi20220101.nc"   # Path to input flow data
-input_netcdf3 = "ThesisTemps.nc"   # Path to input  temperature data
+bathytopograhy_file = "gebco_2025_n59.03_s57.65_w-7.65_e-6.05.nc"   # Path to input elevation data; input_netcdf
+# input_netcdf2 = "metoffice_foam1_amm7_NWS_SSC_hi20220101.nc"   # Path to input flow data
+currents_file = "metoffice_foam1_amm7_NWS_CUR_b20240103_dm20240101.nc"  # input_netcdf2
+# input_netcdf3 = "ThesisTemps.nc"   # Path to input  temperature data
+temperature_file = "metoffice_foam1_amm7_NWS_TEM_b20240103_dm20240101.nc"  # input_netcdf3
 
 def round_to_nice(x):
     magnitude = 10 ** np.floor(np.log10(x))
