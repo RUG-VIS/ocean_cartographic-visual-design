@@ -8,6 +8,7 @@ import matplotlib.ticker as ticker
 import matplotlib.cm as cm
 from matplotlib.colors import TwoSlopeNorm, Normalize, LinearSegmentedColormap, LogNorm
 from matplotlib.collections import LineCollection
+from matplotlib.lines import Line2D
 from matplotlib.patches import Circle, Polygon
 from scipy.ndimage import label, binary_dilation, center_of_mass, distance_transform_edt
 import scipy.ndimage as ndi 
@@ -23,15 +24,21 @@ plt.rcParams.update({
     'figure.facecolor': 'white',
     'axes.facecolor': 'white',
 })
+plot_dpi = 300
 
 # -----------------------------------------------------------------------------
 # General Parameters
 # -----------------------------------------------------------------------------
+parchment_file = "parchment.jpg"
+bathytopograhy_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/"
 bathytopograhy_file = "gebco_2025_n59.03_s57.65_w-7.65_e-6.05.nc"   # Path to input elevation data; input_netcdf
 # input_netcdf2 = "metoffice_foam1_amm7_NWS_SSC_hi20220101.nc"   # Path to input flow data
+currents_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis2D-2024/currents/"
 currents_file = "metoffice_foam1_amm7_NWS_CUR_b20240103_dm20240101.nc"  # input_netcdf2
 # input_netcdf3 = "ThesisTemps.nc"   # Path to input  temperature data
+temperature_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis2D-2024/temperature/"
 temperature_file = "metoffice_foam1_amm7_NWS_TEM_b20240103_dm20240101.nc"  # input_netcdf3
+output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowimages"
 
 def round_to_nice(x):
     magnitude = 10 ** np.floor(np.log10(x))
@@ -72,7 +79,7 @@ def add_scale_bar(ax, lon_range, lat_range, location='lower right'):
     # Calculate a nice round distance for scale bar (approx 10% of the plot width)
     raw_scale_distance = lon_range * 0.1
     
-    # Convert to approximate km (111 km per degree)
+    # Convert to approximate km (111 km per degree) -> CK: ??? - what does this have to do in the bar ? or is it the scale metre ?
     scale_km_raw = raw_scale_distance * 111
     
     # Round to nearest 5 or 10 km based on size
@@ -508,11 +515,11 @@ def add_compass_rose(ax, lon, lat, signed_dist, min_size=0.01, position=None,
 
 def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None, attribute3=None, 
           attribute4=None, attribute5=None, attribute6=None, signed_dist=None, lon=None, lat=None, 
-          water_mask=None, elev=None, elev_modified=None, normalized_attribute1=None, 
+          water_mask=None, elev=None, topography=None, normalized_attribute1=None,
           attribute5_norm=None, attribute5_cmap='RdBu_r', 
           output_image="hatch_output.png", plot_title="Flow as Handdrawn Hatches with Direction Markers",
           use_attribute5_for_color=False,
-          base_density=None, density_scale_factor=0.1, decay_factor=5):
+          base_density=None, density_scale_factor=0.1, decay_factor=5):  # elev_modified=None (replaced by topography)
     """
     Generate hatches based on multiple attributes with automatic scaling based on geographic extent.
     
@@ -547,8 +554,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         Boolean mask for water regions, calculated from signed_dist if None
     elev : xarray.DataArray, optional
         Elevation data
-    elev_modified : xarray.DataArray, optional
-        Modified elevation data (for display), created from elev if None
+    topography : xarray.DataArray, optional
+        Topography data (for display), created from elev if None
     normalized_attribute1 : numpy.ndarray, optional
         Normalized values of attribute1 (0-1 range), calculated automatically if None
     attribute5_norm : matplotlib.colors.Normalize, optional
@@ -605,18 +612,19 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     buffer_factor = 1.05                  # Fixed (multiplier)
     max_iterations = 3                    # Fixed (number of attempts)
     
-    # Line properties (auto-scaled)
-    max_dash_length = avg_range * 0.05    # 5% of average range
-    min_linewidth = 0.5                   # Fixed (points)
-    max_linewidth = 1.5                   # Fixed (points)
+    # Stroke properties (auto-scaled)
+    max_stroke_length = avg_range * 0.05    # 5% of average range
+    min_strokewidth = 0.5                   # Fixed (points)
+    max_strokewidth = 1.5                   # Fixed (points)
     width_variance = 0.0                  # Fixed (percentage)
     angle_variance = 10                   # Fixed (degrees)
     length_variance = 0.2                 # Fixed (percentage)
+    stroke_color = "black"
     
     # Tuft parameters (auto-scaled)
     toggle_tufts = True                   # Fixed (boolean)
     tuft_size_factor = avg_range * 0.005  # 0.5% of average range
-    tuft_color = 'black'                  # Fixed (color)
+    tuft_color = "black"                  # Fixed (color)
     tuft_min_distance = avg_range * 0.01  # 1% of average range
     
     # Tapering effect parameters (fixed ratios)
@@ -630,12 +638,22 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # Print auto-scaling parameters
     print(f"Auto-scaling parameters based on geographic extent:")
     print(f"  - Coordinate range: lon={lon_range:.6f}, lat={lat_range:.6f}, avg={avg_range:.6f}")
-    print(f"  - Max dash length: {max_dash_length:.6f}")
+    print(f"  - Max dash length: {max_stroke_length:.6f}")
     print(f"  - Curve intensity: {curve_intensity:.6f}")
     print(f"  - Jitter amount: {jitter_amount:.6f}")
     print(f"  - Min distance: {min_distance:.6f}")
     print(f"  - Tuft size factor: {tuft_size_factor:.6f}")
     print(f"  - Tuft min distance: {tuft_min_distance:.6f}")
+
+    # legend-related mapping containers
+    val_varmod = np.random.uniform(-length_variance, length_variance)
+    legend_strokelengths = []
+    for factor in [.0, 0.5, 1.0]:
+        legendvalue = factor * max_stroke_length * 0.5 * (1 + val_varmod)
+        legend_strokelengths.append(legendvalue)
+    # legend_strokewidths = []  # -> unused
+    # legend_tuftsizes = []  # -> unused
+    # cbar_tuft_colours = []  # -> unused
     
     # Create prerequisite data if not provided
     
@@ -653,13 +671,16 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     elif water_mask is None:
         # Create a default water mask (all True)
         water_mask = np.ones_like(attribute1, dtype=bool)
-    
-    # Create elev_modified from elev if not provided
-    if elev_modified is None and elev is not None:
-        elev_modified = elev.where(elev <= 0, 0)
-    elif elev_modified is None:
-        # Create a placeholder elev_modified (all zeros)
-        elev_modified = attribute1 * 0
+
+    # TODO: what is 'elev_modified' ? are we even using it ? I think: no, we do not.
+    # ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== #
+    # Create elev_modified from elev if not provided    #
+    # ==== ==== ==== ==== ==== ==== ==== ==== ==== ==== #
+    # if topography is None and elev is not None:
+    #     topography = elev.where(elev <= 0, 0)
+    # elif topography is None:
+    #     # Create a placeholder elev_modified (all zeros)
+    #     topography = np.zeros(attribute1.shape, dtype=np.float32)
     
     # Handle normalized_attribute1 if not provided
     if normalized_attribute1 is None:
@@ -671,8 +692,10 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
                 normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
         else:
             normalized_attribute1 = np.zeros_like(attribute1.values)
-    
-    # Calculate density based on attribute1
+
+    # ==== ==== ==== ==== ==== ==== ==== ==== ==== #
+    # Calculate tuft density based on attribute1   #
+    # ==== ==== ==== ==== ==== ==== ==== ==== ==== #
     attribute1_factor = np.exp(decay_factor * normalized_attribute1) - 1
     attribute1_factor_normalized = attribute1_factor / np.max(attribute1_factor) if np.max(attribute1_factor) > 0 else attribute1_factor
     prob_matrix = np.where(water_mask, base_density * attribute1_factor_normalized, 0)
@@ -695,6 +718,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     else:
         if signed_dist is not None:
             buffer_mask = np.abs(signed_dist) >= shoreline_buffer
+            # TODO: this should be deterministic, otherwise you're visualizing a pattern not backed-up by data
             selected_points = (rand_matrix < prob_matrix) & buffer_mask  # No attribute4 dependency
             rows, cols = np.where(selected_points)
 
@@ -718,9 +742,11 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     all_segments = []
     all_linewidths = []
     all_alphas = []
-    all_colors = []
-    flow_values = []  # Store attribute4 (flow magnitude) for each segment
-    divergence_values = []  # Store attribute5 (divergence) values for each segment 
+    color = stroke_color
+    # all_colors = []
+    all_colors = color
+    # flow_values = []  # Store attribute4 (flow magnitude) for each segment
+    # divergence_values = []  # Store attribute5 (divergence) values for each segment
     
     # Lists for storing tuft circles
     tuft_centers = []
@@ -745,9 +771,10 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         
         if attribute4 is not None and hasattr(attribute4, 'values'):
             attribute4_val = attribute4.values[r, c]
-            #special case where divergence is used for length, use absolute value
-            if "divergence (length)" in plot_title.lower():
-                attribute4_val = np.abs(attribute4_val)
+            # special case where divergence is used for length, use absolute value  # TODO: use absolute all the time - can't modulate a negative length ...
+            # if "divergence (length)" in plot_title.lower():
+            #     attribute4_val = np.abs(attribute4_val)
+            attribute4_val = np.abs(attribute4_val)
         else:
             attribute4_val = 1.0  # Default value for uniform length
             
@@ -764,23 +791,31 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         # Skip some lines randomly to create gaps
         if np.random.random() < gap_probability:
             continue
-        
+
+        # TODO: change to arctan2(wedge([0,1], [a,b]) => [DONE]
         # Calculate angle from vector direction with random variance
-        base_angle = np.arctan2(attribute3_val, attribute2_val)
-        angle_rad_variance = np.radians(angle_variance)
+        avec = np.array([.0, .1], dtype=np.float32)
+        bvec = np.array([attribute2_val, attribute3_val], dtype=np.float32)
+        wedge_ab = np.absolute(avec[0]*bvec[1]-avec[1]*bvec[0])
+        dot_ab = avec[0]*bvec[0] + avec[1]*bvec[1]
+        # base_angle = np.arctan2(attribute3_val, attribute2_val)
+        base_angle = np.arctan2(wedge_ab, dot_ab)
+        angle_rad_variance = np.radians(angle_variance)  # why ? if the atan2 is done correctly, this returns radians
         angle = base_angle + np.random.uniform(-angle_rad_variance, angle_rad_variance)
         
         # Dynamic dash length based on attribute4  with random variance
+        base_stroke_length = -1.0
         if attribute4 is not None and hasattr(attribute4, 'values'):
             # Variable length based on attribute4
             attr4_max = np.nanmax(attribute4.values)
 
-            base_dash_length = (attribute4_val / attr4_max if attr4_max > 0 else 0.5) * max_dash_length
+            # base_stroke_length = (attribute4_val / attr4_max if attr4_max > 0 else 0.5) * max_stroke_length
+            base_stroke_length = (np.abs(attribute4_val) / attr4_max if attr4_max > 0 else 0.5) * max_stroke_length
         else:
             # Uniform length when attribute4 is None
-            base_dash_length = max_dash_length * 0.5 
+            base_stroke_length = max_stroke_length * 0.5
             
-        dash_length = base_dash_length * (1 + np.random.uniform(-length_variance, length_variance))
+        stroke_length = base_stroke_length * (1 + np.random.uniform(-length_variance, length_variance))
         
         # Check for nearby centers to avoid overlaps
         overlap = False
@@ -798,7 +833,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             if placed_centers:
                 kdtree = KDTree(placed_centers)
                 dist, _ = kdtree.query((test_lon, test_lat), k=1)
-                overlap = dist < (min_distance + dash_length * buffer_factor)
+                overlap = dist < (min_distance + stroke_length * buffer_factor)
             
             if not overlap:
                 # Center is good, use it
@@ -813,8 +848,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         lon_center, lat_center = points_to_try[0]
         
         # Calculate start and end points
-        dx = dash_length * np.cos(angle)
-        dy = dash_length * np.sin(angle)
+        dx = stroke_length * np.cos(angle)
+        dy = stroke_length * np.sin(angle)
         start = (lon_center - dx/2, lat_center - dy/2)
         end = (lon_center + dx/2, lat_center + dy/2)
         
@@ -852,26 +887,28 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             y = (1-t)**2 * start[1] + 2*(1-t)*t * mid_y + t**2 * end[1]
             points.append((x, y))
 
-        # Calculate line width based on attribute6 (if provided) or use uniform width
+        # Calculate stroke width based on attribute6 (if provided) or use uniform width
+        # TODO: well, it is 'in range' of attribute 6, but not based on it ...
         if attribute6 is not None and hasattr(attribute6, 'values'):
             # Normalize attribute6 (width) value
             attr6_min = np.nanmin(attribute6.values)
             attr6_max = np.nanmax(attribute6.values)
             
             if attr6_min == attr6_max:
-                base_width = (min_linewidth + max_linewidth)/2
+                stroke_width = (min_strokewidth + max_strokewidth)/2.0
             else:
                 normalized_width = (attribute6_val - attr6_min) / (attr6_max - attr6_min)
-                base_width = min_linewidth + normalized_width * (max_linewidth - min_linewidth)
+                stroke_width = min_strokewidth + normalized_width * (max_strokewidth - min_strokewidth)
         else:
             # Use a uniform width when attribute6 is not provided
-            base_width = (min_linewidth + max_linewidth)/2 
+            stroke_width = (min_strokewidth + max_strokewidth)/2.0
 
         # Apply width variance to the base width
-        base_width = base_width * (1 + np.random.uniform(-width_variance, width_variance))
+        stroke_width = stroke_width * (1.0 + np.random.uniform(-width_variance, width_variance))
 
         # Calculate tuft size
-        tuft_size = base_width * tuft_size_factor
+        # according to the current calculation, this is constant over all datapoints
+        tuft_size = stroke_width * tuft_size_factor
         
         # Check if the tuft would overlap with existing tufts
         tuft_position = (points[0][0], points[0][1])
@@ -908,12 +945,13 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
                 
                 # Add the tuft circle
                 tuft_centers.append(tuft_position)
-                tuft_sizes.append(tuft_size)
+                tuft_sizes.append(tuft_size)  # TODO: this should be a value, not an array ...
                 
                 # Use the same alpha as the line for consistency
+                # TODO: check with constant alpha
                 alpha = 0.8 + np.random.uniform(-alpha_variance, alpha_variance)
                 alpha = max(0.4, min(1.0, alpha))  # Keep alpha within reasonable bounds
-                tuft_alphas.append(alpha)
+                tuft_alphas.append(alpha)  # TODO: this should be a value, not an array ...
             else:
                 alpha = 0.8 + np.random.uniform(-alpha_variance, alpha_variance)
                 alpha = max(0.4, min(1.0, alpha))  # Keep alpha within reasonable bounds
@@ -940,33 +978,38 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
                     width_factor = 1.0
                 
                 # Apply width factor to base width
-                segment_width = base_width * width_factor
+                segment_width = stroke_width * width_factor
                 all_linewidths.append(segment_width)
                 
                 # Store segment
                 all_segments.append([points[i], points[i+1]])
                 
                 # Variable alpha for each segment
-                all_alphas.append(alpha)
-                
-                color = 'black'
+                all_alphas.append(alpha)  # TODO: is this necessary ? test without ...
 
                 # Add the color to the list, ensuring it's in the right format
-                all_colors.append(color if isinstance(color, str) else tuple(color))
+                if not isinstance(color, str) and not isinstance(all_colors, str):
+                    all_colors.append(color if isinstance(color, str) else tuple(color))  # TODO: interpolate on a cmap using an input attribute
                 
-                flow_values.append(attribute4_val)
-                divergence_values.append(attribute5_val)
+                # flow_values.append(attribute4_val)  # unused
+                # divergence_values.append(attribute5_val)  # unused
             
             # Add center to the list of placed centers
             placed_centers.append((lon_center, lat_center))
 
-    # Plot the results
-    fig, ax = plt.subplots(figsize=(10, 8))
+    # ---------------- #
+    # Plot the results #
+    # ---------------- #
+    # fig, ax = plt.subplots(figsize=(10, 8))
+    datafig = plt.figure(figsize=(12, 8))
+    dataaxis = datafig.add_axes([0.14, 0.11, 0.75, 0.78])
+    dataaxis.set_xlim([lon.min(), lon.max()])
+    dataaxis.set_ylim([lat.min(), lat.max()])
 
     # Add parchment texture background if available
     try:
-        img = plt.imread('parchment_texture.jpg')
-        ax.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()], 
+        img = plt.imread(parchment_file)
+        dataaxis.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()],
                 aspect='auto', alpha=0.3, zorder=0)
     except FileNotFoundError:
         print("Parchment texture file not found. Proceeding without it.")
@@ -975,17 +1018,23 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # variables for colorbar control
     cs_u = None 
     background_shown = False
+
+    # TODO: pretty sure that if you wanna work with multiple semi-transparent
+    # layers, that you then need to control the zorder
     
     if attribute5 is not None and use_attribute5_for_color:
         # Use attribute5 for background coloration
-        cs_u = ax.pcolormesh(
+        cs_u = dataaxis.pcolormesh(
             lon,
             lat,
             attribute5,
             shading='gouraud',
             cmap=attribute5_cmap,
             norm=attribute5_norm,
-            alpha=0.5  # means we still have a bit of parchment showing through
+            alpha=0.5,  # means we still have a bit of parchment showing through
+            zorder=1,
+            edgecolor=None,
+            rasterize=True
         )
         background_shown = True
     
@@ -995,48 +1044,18 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     ]
 
     # Create line collection for the hatches
-    lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, alpha=all_alphas)
-    ax.add_collection(lc)
+    lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, alpha=all_alphas)  # , zorder=2
+    dataaxis.add_collection(lc)
     
     # Add tuft circles to indicate flow direction if enabled
     if toggle_tufts and tuft_centers:
         for center, size, alpha in zip(tuft_centers, tuft_sizes, tuft_alphas):
             circle = Circle(center, size/2, color=tuft_color, alpha=alpha, zorder=3)
-            ax.add_patch(circle)
-    
-    if use_attribute5_for_color and attribute5 is not None:
-        if attribute5_norm is not None:
-            # Create a ScalarMappable for the colorbar
-            sm = cm.ScalarMappable(cmap=attribute5_cmap, norm=attribute5_norm)
-            sm.set_array([]) 
-            
-            # Add colorbar for attribute5
-            cbar = plt.colorbar(sm, ax=ax)
-            
-            # Set an appropriate label based on what attribute5 represents
-            if hasattr(attribute5, 'name'):
-                cbar.set_label(f'{attribute5.name}')
-            else:
-                cbar.set_label('Divergence' if 'divergence' in str(attribute5).lower() else 'Color Variable')
-        elif background_shown and cs_u is not None:
-            # Use the colormesh for the colorbar if we have one
-            cbar = fig.colorbar(cs_u, ax=ax)
-            if hasattr(attribute5, 'name'):
-                cbar.set_label(f'{attribute5.name}')
-            else:
-                background_label = 'Color Variable'               
-                    # colorbar units 
-                if background_label == "Depth":
-                    background_label = "Elevation (m)"
-                elif background_label == "Temperature":
-                    background_label = "Temperature (°C)"
-                elif background_label == "Flow Magnitude":
-                    background_label = "Flow Magnitude (m/s)"
-                cbar.set_label(background_label)
+            dataaxis.add_patch(circle)
     
     # Always add shoreline contour if signed_dist is provided
     if signed_dist is not None:
-        ax.contour(lon, lat, signed_dist, levels=[0], colors='black', linewidths=0.8, linestyles='solid')
+        dataaxis.contour(lon, lat, signed_dist, levels=[0], colors='black', linewidths=0.8, linestyles='solid')
     
     # Add grid lines for scale reference
     grid_alpha = 0.5 
@@ -1066,29 +1085,29 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     lat_grid = np.arange(lat_start, lat_end + lat_spacing/2, lat_spacing)
     
     # Draw grid lines
-    ax.grid(False)  # Disable default grid
+    dataaxis.grid(False)  # Disable default grid
     
     # Add custom grid lines
     for x in lon_grid:
-        ax.axvline(x=x, color=grid_color, linestyle=grid_linestyle, 
+        dataaxis.axvline(x=x, color=grid_color, linestyle=grid_linestyle,
                   linewidth=grid_linewidth, alpha=grid_alpha, zorder=0)
     
     for y in lat_grid:
-        ax.axhline(y=y, color=grid_color, linestyle=grid_linestyle, 
+        dataaxis.axhline(y=y, color=grid_color, linestyle=grid_linestyle,
                   linewidth=grid_linewidth, alpha=grid_alpha, zorder=0)
     
     # Add ticks at grid line positions
-    ax.set_xticks(lon_grid)
-    ax.set_yticks(lat_grid)
+    dataaxis.set_xticks(lon_grid)
+    dataaxis.set_yticks(lat_grid)
     
     # Format tick labels to reduce clutter
-    ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
-    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
+    dataaxis.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
+    dataaxis.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
      
     # Add compass rose if signed_dist is provided
     if signed_dist is not None:
         compass_position = add_compass_rose(
-            ax, lon, lat, signed_dist, 
+            dataaxis, lon, lat, signed_dist,
             size_factor=0.06,  # Adjust size relative to plot
             style='traditional',
             color='black',
@@ -1098,43 +1117,116 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         print(f"Added compass rose at position {compass_position}")
 
     # Set title and labels
-    ax.set_title(plot_title)    
-    ax.set_xlabel('Longitude [°]')
-    ax.set_ylabel('Latitude [°]')
-    ax.set_xlim(lon.min(), lon.max())
-    ax.set_ylim(lat.min(), lat.max())
-    
+    dataaxis.set_title(plot_title)  # => figure
+    dataaxis.set_xlabel('lon [°]')
+    dataaxis.set_ylabel('lat [°]')
+    # dataaxis.set_xlim(lon.min(), lon.max())
+    # dataaxis.set_ylim(lat.min(), lat.max())
+
+    # Legend / colourbar for density
+    ax_cbar_tuft_density = datafig.add_axes([0.055, 0.1, 0.02, 0.8])
+    img = plt.imread("densitybar_vertical.png")
+    ax_cbar_tuft_density.imshow(img, aspect='auto')
+    ax_cbar_tuft_density.set_xlim(0, 1)
+    ax_cbar_tuft_density.set_ylim(0, 1)
+    ax_cbar_tuft_density.tight_layout()
+    ax_cbar_tuft_density.xaxis.set_major_locator(ticker.NullLocator())
+    ax_cbar_tuft_density.yaxis.set_major_locator(ticker.MaxNLocator(5))
+    if hasattr(attribute1, 'name'):
+        ax_cbar_tuft_density.set_ylabel(f'{attribute1.name}')
+    # ---- tick-coded inspiration ---- #
+    # ax.set_yticks(np.arange(0, 100.1, 100 / 3))
+    # xticks = np.arange(0.50, 101, 20)
+    # xlabels = [f'\\${x:1.2f}' for x in xticks]
+    # ax.set_xticks(xticks, labels=xlabels)
+    # ---- end: tick-coded inspiration ---- #
+
+    # Legend / colourbar for the background colourmap
+    ax_cbar_bg_colourmap = datafig.add_axes([0.915, 0.1, 0.02, 0.8])
+    ax_cbar_bg_colourmap.set_facecolor("white")
+    ax_cbar_bg_colourmap.yaxis.set_ticks_position('right')
+    ax_cbar_bg_colourmap.yaxis.set_label_position('left')
+    if use_attribute5_for_color and attribute5 is not None:
+        if attribute5_norm is not None:
+            # Create a ScalarMappable for the colorbar
+            sm = cm.ScalarMappable(cmap=attribute5_cmap, norm=attribute5_norm)
+            sm.set_array([])
+
+            # Add colorbar for attribute5
+            # cmap_bar = plt.colorbar(sm, ax=ax)
+            cmap_bar = plt.colorbar(sm, cax=ax_cbar_bg_colourmap, ticks=ticker.AutoLocator(), orientation='vertical')
+            # Set an appropriate label based on what attribute5 represents
+            if hasattr(attribute5, 'name'):
+                cmap_bar.set_label(f'{attribute5.name}')
+            else:
+                cmap_bar.set_label('Divergence' if 'flow_divergence' in str(attribute5).lower() else 'Color Variable')
+        elif background_shown and cs_u is not None:
+            # Use the colormesh for the colorbar if we have one
+            # cbar = fig.colorbar(cs_u, ax=ax)
+            cmap_bar = plt.colorbar(cs_u, cax=ax_cbar_bg_colourmap, ticks=ticker.AutoLocator(), orientation='vertical')
+            if hasattr(attribute5, 'name'):
+                cmap_bar.set_label(f'{attribute5.name}')
+            else:
+                background_label = ""
+                # colorbar units
+                # if background_label == "Depth":
+                if background_label == "Topography":
+                    background_label = "Elevation (m)"
+                elif background_label == "Temperature":
+                    background_label = "Temperature (°C)"
+                elif background_label == "VelocityMagnitude":
+                    background_label = "Velocity Magnitude (m/s)"
+                cmap_bar.set_label(background_label)
+
+    # Legend / colourbar for line colour
+    if not isinstance(all_colors, str):
+        # for filling this, we need the base colour map for it
+        pass
+
+    # Legend / colourbar for alpha difficult to do - leave for now
+
+    legend_elements = []
+    # Legend / colourbar for line width
+    if not isinstance(all_linewidths, str):
+        label_base = ""
+        if hasattr(attribute1, 'name'):
+            label_base=f'{attribute1.name}'
+        for lengthitem in legend_strokelengths:
+            legend_elements.append(Line2D([0], [lengthitem], color='black', lw=1, label=label_base+': '+f'{lengthitem}'))
+
+    # Finalize the in-plot legend
+    dataaxis.legend(handles=legend_elements, loc='upper right')  # , bbox_to_anchor=(0.5, -0.05),
     # Add scale bar
-    add_scale_bar(ax, lon_range, lat_range)
+    add_scale_bar(dataaxis, lon_range, lat_range)
     plt.tight_layout()
     
     # Save the figure
-    plt.savefig(output_image, dpi=600)
+    plt.savefig(output_image, dpi=plot_dpi)
     print(f"Figure saved to {output_image}")
     
     # Optionally show the figure
     # plt.show()
-    4
-    plt.close(fig)
+    plt.close(datafig)
     
     # Return generated data for potential further use
-    return {
-        'segments': all_segments, 
-        'linewidths': all_linewidths, 
-        'alphas': all_alphas, 
-        'colors': all_colors, 
-        'tuft_centers': tuft_centers, 
-        'tuft_sizes': tuft_sizes, 
-        'tuft_alphas': tuft_alphas,
-        'parameters': {
-            'max_dash_length': max_dash_length,
-            'curve_intensity': curve_intensity,
-            'jitter_amount': jitter_amount,
-            'min_distance': min_distance,
-            'tuft_size_factor': tuft_size_factor,
-            'tuft_min_distance': tuft_min_distance
-        }
-    }
+    # return {
+    #     'segments': all_segments,
+    #     'linewidths': all_linewidths,
+    #     'alphas': all_alphas,
+    #     'colors': all_colors,
+    #     'tuft_centers': tuft_centers,
+    #     'tuft_sizes': tuft_sizes,
+    #     'tuft_alphas': tuft_alphas,
+    #     'parameters': {
+    #         'max_dash_length': max_dash_length,
+    #         'curve_intensity': curve_intensity,
+    #         'jitter_amount': jitter_amount,
+    #         'min_distance': min_distance,
+    #         'tuft_size_factor': tuft_size_factor,
+    #         'tuft_min_distance': tuft_min_distance
+    #     }
+    # }
+    return True
 
 #--------------------------------------------------------------------------
 # Stipple Generation
@@ -1464,6 +1556,8 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
     ax.set_ylabel('Latitude [°]')
     ax.set_xlim(lon.min(), lon.max())
     ax.set_ylim(lat.min(), lat.max())
+
+    # TODO: missing color bars / legend
 
     # Add scale bar
     add_scale_bar(ax, lon_range, lat_range)
@@ -1954,6 +2048,7 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             attribute3_label = "Temperature (°C)"
         elif attribute3_label == "Flow Magnitude":
             attribute3_label = "Flow Magnitude (m/s)"
+        # TODO: isn't rendered = where are they ? those need to be axis elements, not figure elements, if I'm not mistaken
         cbar_attr3 = fig.colorbar(cs_attr3, ax=ax, label=attribute3_label)
     
     # Plot shoreline if signed_dist is provided
@@ -2023,9 +2118,10 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     print(f"Added compass rose at position {compass_position}")
     ax.set_xlim(lon.min(), lon.max())
     ax.set_ylim(lat.min(), lat.max())
-    # Add scale bar
     add_scale_bar(ax, lon_range, lat_range)
     plt.tight_layout()
+
+    # TODO: add legend / axis bars
     
     # Save the figure
     plt.savefig(output_image, dpi=600, bbox_inches='tight')
@@ -2054,53 +2150,56 @@ def load_sample_data():
     Load and prepare oceanographic data for visualisation.
     """
     # Load dataset for elevation
-    ds = xr.open_dataset(input_netcdf)
+    ds = xr.open_dataset(os.path.join(bathytopograhy_dir,bathytopograhy_file))
     lat = ds["lat"]        # 1D array of latitudes
     lon = ds["lon"]        # 1D array of longitudes
-    elev = ds["elevation"] # 2D array [lat, lon]
+    elevation = ds["elevation"] # 2D array [lat, lon]
+    # TODO: this clamping to a squared area (|lon| = |lat|) is something I don't fully understand the purpose for ...
     min_size = min(len(lon), len(lat))
     lon = lon[:min_size]
     lat = lat[:min_size]
-    elev = elev[:min_size, :min_size]
+    elevation = elevation[:min_size, :min_size]
 
     # Load dataset for flow data
-    ds2 = xr.open_dataset(input_netcdf2)
-    u = ds2["uo"].isel(time=0)  # Eastward velocity (m/s)
-    v = ds2["vo"].isel(time=0)  # Northward velocity (m/s)
+    ds2 = xr.open_dataset(os.path.join(currents_dir, currents_file))
+    # u = ds2["uo"].isel(time=0)  # Eastward velocity (m/s)
+    # v = ds2["vo"].isel(time=0)  # Northward velocity (m/s)
+    u = np.squeeze(ds2["uo"][0])
+    v = np.squeeze(ds2["vo"][0])
     
     # Load dataset for temperature data
-    ds3 = xr.open_dataset(input_netcdf3)
-    temp = ds3["thetao"].isel(time=0)  # Temperature (°C)
+    ds3 = xr.open_dataset(os.path.join(temperature_dir, temperature_file))
+    # temp = ds3["thetao"].isel(time=0)  # Temperature (°C)
+    temp = np.squeeze(ds3["thetao"][0])  # Temperature (°C)
 
     # Identify the shoreline
-    shoreline_mask = np.where(elev >= 0, 1, 0)
+    shoreline_mask = np.where(elevation >= 0, 1, 0)
     erosion = ndi.binary_erosion(shoreline_mask, structure=np.ones((3, 3)))
     shoreline_mask = shoreline_mask & ~erosion
 
     # Compute the distance transform 
-    dist_to_shore = distance_transform_edt(shoreline_mask == 0, 
-                                          sampling=(np.abs(lat[1] - lat[0]), 
-                                                   np.abs(lon[1] - lon[0])))
+    dist_to_shore = distance_transform_edt(shoreline_mask == 0, sampling=(np.abs(lat[1] - lat[0]), np.abs(lon[1] - lon[0])))
     
     # Assign sign based on whether elevation is above or below zero
+    # TODO: usually, the sign here should be switched: positive for outside, negative for inside
     signed_dist = dist_to_shore.copy()
-    signed_dist[elev < 0] *= -1  
-
+    signed_dist[elevation < 0] *= -1
     # Create mask for water regions
     water_mask = (signed_dist <= 0)
 
     # Replace NaNs with small values
-    u = u.fillna(0.01)
-    v = v.fillna(0.01)
-    temp = temp.fillna(0.01)
+    u = u.fillna(.0)
+    v = v.fillna(.0)
+    temp = temp.fillna(.0)
 
     # Interpolate flow data to match elevation grid
-    u = u.interp(latitude=lat, longitude=lon, method="cubic")
-    v = v.interp(latitude=lat, longitude=lon, method="cubic")
-    temp = temp.interp(latitude=lat, longitude=lon, method="cubic")
+    u = u.interp(latitude=lat, longitude=lon, method="linear")  # method="cubic"
+    v = v.interp(latitude=lat, longitude=lon, method="linear")  # method="cubic"
+    temp = temp.interp(latitude=lat, longitude=lon, method="linear")  # method="cubic"
+
+    # TODO: again: why are we clamping the fields to a squared area ?
     u = u[:min_size, :min_size]
     v = v[:min_size, :min_size]
-
     temp = temp[:min_size, :min_size]
 
     u = u.where(water_mask)
@@ -2108,7 +2207,9 @@ def load_sample_data():
     temp = temp.where(water_mask)
 
     # Compute the magnitude of the flow field
-    flow_mag = np.sqrt(u**2 + v**2)
+    velmag = u**2 + v**2
+    velmag = np.where(velmag > 0, np.sqrt(velmag), .0)
+
 
     # Calculate flow divergence
     lon_spacing = float(np.abs(lon[1] - lon[0]))
@@ -2131,27 +2232,32 @@ def load_sample_data():
     flow_divergence = dudx + dvdy
     
     # Create divergence dataarray
-    divergence = xr.DataArray(
-        data=flow_divergence,
-        dims=("lat", "lon"),
-        coords={"lat": lat, "lon": lon}
-    )
+    # divergence = xr.DataArray(
+    #     data=flow_divergence,
+    #     dims=("lat", "lon"),
+    #     coords={"lat": lat, "lon": lon}
+    # )
     
     # Mask out non-water areas in the divergence field
-    divergence = divergence.where(water_mask)
+    # divergence = divergence.where(water_mask)
+    flow_divergence = flow_divergence.where(water_mask)
     
     # Replace NaNs and handle infinite values
     flow_divergence = np.nan_to_num(flow_divergence, nan=0, posinf=0, neginf=0)
-    divergence.values = flow_divergence
+    # divergence.values = flow_divergence
     
 
-    divergence = divergence[:min_size, :min_size]
-    flow_mag = flow_mag[:min_size, :min_size]
+    # TODO: again: why are we clamping the fields to a squared area ?
+    # divergence = divergence[:min_size, :min_size]
+    flow_divergence = flow_divergence[:min_size, :min_size]
+    velmag = velmag[:min_size, :min_size]
     temp = temp[:min_size, :min_size]
 
     # Create divergence norm
-    divergence_min = np.nanpercentile(flow_divergence[water_mask], 5)
-    divergence_max = np.nanpercentile(flow_divergence[water_mask], 95)
+    # divergence_min = np.nanpercentile(flow_divergence[water_mask], 5)
+    # divergence_max = np.nanpercentile(flow_divergence[water_mask], 95)
+    divergence_min = np.nanpercentile(flow_divergence, 5)
+    divergence_max = np.nanpercentile(flow_divergence, 95)
     divergence_abs_max = max(abs(divergence_min), abs(divergence_max))
     divergence_norm = TwoSlopeNorm(vmin=-divergence_abs_max, vcenter=0, vmax=divergence_abs_max)
     
@@ -2163,12 +2269,12 @@ def load_sample_data():
     normv = TwoSlopeNorm(vmin=-abs_max_v, vcenter=0, vmax=abs_max_v)
 
     # Norm for flow magnitude
-    speed_max = np.nanmax(flow_mag)
-    speed_min = 0
-    norm_speed = Normalize(vmin=speed_min, vmax=speed_max)
+    velmag_max = np.nanmax(velmag)
+    velmag_min = 0
+    norm_speed = Normalize(vmin=velmag_min, vmax=velmag_max)
 
-    # Modified elevation for bathymetry
-    elev_modified = elev.where(elev <= 0, 0)
+    # Modified elevation for topography -> TODO: call it topography !!!!
+    topography = elevation.where(elevation <= 0, 0)
     
     # Normalize temperature data
     temp_min = np.nanmin(temp)
@@ -2192,24 +2298,24 @@ def load_sample_data():
     return {
         'lat': lat, 
         'lon': lon, 
-        'elev': elev,
-        'elev_modified': elev_modified,
+        'elevation': elevation,
+        'topography': topography,
         'u': u, 
         'v': v, 
         'temp': temp,
-        'flow_mag': flow_mag,
-        'flow_divergence': flow_divergence,
-        'divergence': divergence,
+        'velmag': velmag,  # formerly: flow_mag
+        'flow_divergence': flow_divergence,  # TODO: change to divergence ? what's the difference ?
+        # 'divergence': divergence,  # removed as it is just the xarray duplicate of 'flow_divergence'
         'signed_dist': signed_dist,
         'water_mask': water_mask,
-        'normalized_temp': normalized_temp,
+        'normalized_temp': normalized_temp,  # TODO: normalized to what ?
         'divergence_norm': divergence_norm,
         'norm_speed': norm_speed,
         'normu': normu,
         'normv': normv,
         'temp_log_norm': temp_log_norm,
-        'speed_min': speed_min,
-        'speed_max': speed_max,
+        'velmag_min': velmag_min,
+        'velmag_max': velmag_max,
         'temp_min': temp_min,
         'temp_max': temp_max
     }
@@ -2232,9 +2338,10 @@ def generate_all_possible_mappings(data, output_dir="visualisation_outputs"):
     # Define available variables and their descriptive names
     variables = {
         'temp': 'Temperature',
-        'flow_mag': 'Flow Magnitude',
-        'divergence': 'Divergence',
-        'elev_modified': 'Depth'
+        'velmag': 'VelocityMagnitude',
+        'flow_divergence': 'Divergence',
+        'topography': 'Topography'
+        # 'elev_modified': 'Depth'
     }
     
     # Define flow direction variables
@@ -2296,8 +2403,10 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
             valid_combinations.append(combo)
     
     print(f"Found {len(valid_combinations)} valid hatch combinations")
-    
-    # Generate visualisations for each valid combination
+
+    # -------------------------------------------------- #
+    # Generate visualisations for each valid combination #
+    # -------------------------------------------------- #
     for i, combo in enumerate(valid_combinations):
         density_var, length_var, color_var, width_var = combo  # Unpack all four variables
         
@@ -2307,22 +2416,22 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
             
         # Create descriptive filename components
         density_part = f"{variables[density_var]}-Density"
-        orient_part = "FlowDirection-Orientation"
+        orient_part = "VelocityDirection-Orientation"
         
         if length_var is None:
-            length_part = "Uniform Length"
+            length_part = "Uniform-Length"
         else:
             length_part = f"{variables[length_var]}-Length"
             
         if width_var is None:
-            width_part = "Uniform Width"
+            width_part = "Uniform-Width"
         else:
             width_part = f"{variables[width_var]}-Width"
             
         if color_var is None:
-            color_part = ""
+            color_part = "No-BgColor"
         else:
-            color_part = f"_{variables[color_var]}-Background Color"
+            color_part = f"_{variables[color_var]}-BgColor"
         
         # Combine filename components
         filename = f"Hatch_{density_part}_{orient_part}_{length_part}_{width_part}{color_part}.png"
@@ -2342,19 +2451,20 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
         if length_var is None:
         # For UniformLength, create a dummy array instead of using None
             uniform_length_value = 0.5  # Medium value
-            attribute4 = xr.DataArray(
-                data=np.ones_like(attribute1.values) * uniform_length_value,
-                dims=attribute1.dims,
-                coords=attribute1.coords,
-                name="uniform_length"
-            )   
+            attribute4 = np.ones(attribute1.shape, dtype=np.float32) * uniform_length_value
+            # attribute4 = xr.DataArray(
+            #     data=np.ones_like(attribute1.values) * uniform_length_value,
+            #     dims=attribute1.dims,
+            #     coords=attribute1.coords,
+            #     name="uniform_length"
+            # )
             print(f"Created uniform length attribute4 with shape {attribute4.shape}")
         else:
             attribute4 = data[length_var]
         
         # Set up attribute5 (color) and related parameters
         attribute5 = data[color_var] if color_var else None
-        use_attribute5_for_color = color_var is not None
+        use_attribute5_for_color = (color_var is not None)
         
         # Set up attribute6 (width)
         attribute6 = data[width_var] if width_var else None
@@ -2381,45 +2491,48 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
             use_attribute5_for_color = True
 
             #  Build an appropriate normalisation
-            if color_var == "divergence":
+            if color_var in ["flow_divergence", "temp"]:
                 # Diverging: centre on zero
                 vmax = np.nanpercentile(np.abs(attribute5), 95)
                 attribute5_norm = TwoSlopeNorm(vmin=-vmax, vcenter=0, vmax=vmax)
-                attribute5_cmap = plt.cm.get_cmap("RdBu_r")
+                # attribute5_cmap = plt.cm.get_cmap("RdBu_r")
+                attribute5_cmap = plt.cm.get_cmap("bwr")
             else:
                 # Sequential: simple linear 5-th→95-th percentile stretch
                 vmin, vmax = np.nanpercentile(attribute5, (5, 95))
                 attribute5_norm = plt.Normalize(vmin=vmin, vmax=vmax)
-
-                if color_var == "temp":
-                    attribute5_cmap = plt.cm.get_cmap("Oranges")
-                elif color_var == "flow_mag":
-                    attribute5_cmap = plt.cm.get_cmap("Reds")
-                elif color_var == "elev_modified":
-                    attribute5_cmap = plt.cm.get_cmap("Greys_r")
+                if color_var == "velmag":
+                    attribute5_cmap = plt.cm.get_cmap("PuBu")
+                elif color_var == "topography":  # elev_modified
+                    # attribute5_cmap = plt.cm.get_cmap("BrBG_r")
+                    attribute5_cmap = plt.cm.get_cmap("YlOrBr")
+                # elif color_var == "temp":
+                #     attribute5_cmap = plt.cm.get_cmap("bwr")
                 else:                            
-                    attribute5_cmap = plt.cm.get_cmap("viridis")
+                    # attribute5_cmap = plt.cm.get_cmap("viridis")
+                    attribute5_cmap = plt.cm.get_cmap("Greys_r")
         
         # Create title based on mappings
         title_parts = [
-            f"{variables[density_var]} (Density)",
-            "Flow (Orientation)"
+            f"{variables[density_var]} (Stroke Density)",
+            "Veloctity Orientation (Stroke Orientation)"
         ]
         
         if length_var is None:
-            title_parts.append("Uniform Length")
+            title_parts.append("Uniform Stroke Length")
         else:
-            title_parts.append(f"{variables[length_var]} (Length)")
+            title_parts.append(f"{variables[length_var]} (Stroke Length)")
             
         if width_var is None:
-            title_parts.append("Uniform Width")
+            title_parts.append("Uniform Stroke Width")
         else:
-            title_parts.append(f"{variables[width_var]} (Width)")
+            title_parts.append(f"{variables[width_var]} (Stroke Width)")
             
         if color_var:
             title_parts.append(f"{variables[color_var]} (Background Color)")
             
         plot_title = f"Hatch: {', '.join(title_parts)}"
+        plot_title = ""
         
         # Call  hatch function with the configured parameters
         try:
@@ -2436,8 +2549,8 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
                 lon=data['lon'],
                 lat=data['lat'],
                 water_mask=data['water_mask'],
-                elev=data['elev'],
-                elev_modified=data['elev_modified'],
+                elev=data['elevation'],
+                topography=data["topography"],  # elev_modified
                 normalized_attribute1=normalized_attribute1,
                 attribute5_norm=attribute5_norm,
                 attribute5_cmap=attribute5_cmap,
@@ -2446,7 +2559,7 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
                 attribute1_label=f"{variables[density_var]}",
                 use_attribute5_for_color=use_attribute5_for_color,
                 base_density=0.08  # Adjust for better visualisation
-            )
+            )  # TODO: to be modfied by plotting title
         except Exception as e:
             print(f"Error generating {filename}: {e}")
     
@@ -2531,13 +2644,13 @@ def generate_all_stipple_combinations(data, variables, output_dir):
             attribute3_max = np.nanmax(attribute3)
             attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
             if background_var == 'temp':
-                attribute3_cmap = 'Oranges'
-            elif background_var == 'flow_mag':
-                attribute3_cmap = 'Reds'
-            elif background_var == 'elev_modified':
-                attribute3_cmap = 'Blues_r'
+                attribute3_cmap = 'bwr'
+            elif background_var == 'velmag':
+                attribute3_cmap = 'PuBu'
+            elif background_var == "bathytopo":  # elev_modified
+                attribute3_cmap = 'BrBG_r'
             else:
-                attribute3_cmap = 'viridis'
+                attribute3_cmap = 'Greys_r'
        
         # Call the stipple function with the configured parameters
         try:
@@ -2557,7 +2670,7 @@ def generate_all_stipple_combinations(data, variables, output_dir):
                 attribute2_label=f"{variables[density_var]}",
                 attribute3_label=f"{variables[background_var]}" if background_var else None,
                 plot_title=f"Stipple: {variables[contour_var]} (Contours), {variables[density_var]} (Stipple Density)" +
-                         (f", {variables[background_var]} (Background)" if background_var else ""),
+                         (f", {variables[background_var]} (Background)" if background_var else ""),  # TODO: to be modfied
                 output_image=output_path,
                 attribute3_cmap=attribute3_cmap,
                 num_contours=6,
@@ -2654,13 +2767,13 @@ def generate_all_flow_combinations(data, variables, output_dir):
             attribute3_max = np.nanmax(attribute3)
             attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
             if background_var == 'temp':
-                attribute3_cmap = 'Oranges'
-            elif background_var == 'flow_mag':
-                attribute3_cmap = 'Reds'
-            elif background_var == 'elev_modified':
-                attribute3_cmap = 'Blues_r'
+                attribute3_cmap = 'bwr'
+            elif background_var == 'velmag':
+                attribute3_cmap = 'PuBu'
+            elif background_var == "bathytopo":  # elev_modified
+                attribute3_cmap = 'BrBG_r'
             else:
-                attribute3_cmap = 'viridis'
+                attribute3_cmap = 'Greys'
         
         # Create title components
         title_parts = [
@@ -2676,7 +2789,7 @@ def generate_all_flow_combinations(data, variables, output_dir):
         if background_var:
             title_parts.append(f"{variables[background_var]} (Background Color)")
             
-        plot_title = f"Flow Contour: {', '.join(title_parts)}"
+        plot_title = f"Flow Contour: {', '.join(title_parts)}"  # TODO: to be modified
         
         # Call the flow function with the configured parameters
         try:
@@ -2707,7 +2820,7 @@ def main():
     data = load_sample_data()
     print("Data loaded successfully.")
     
-    generate_all_possible_mappings(data, output_dir="shorelinetestpaper_images")
+    generate_all_possible_mappings(data, output_dir=output_dir)
     
     print("All visualisation mappings completed successfully!")
 
