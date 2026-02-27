@@ -1550,14 +1550,14 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
         )
         print(f"Added compass rose at position {compass_position}")
 
+    # TODO: missing color bars / legend
+
     # Set title and labels
     ax.set_title(plot_title)    
     ax.set_xlabel('Longitude [°]')
     ax.set_ylabel('Latitude [°]')
     ax.set_xlim(lon.min(), lon.max())
     ax.set_ylim(lat.min(), lat.max())
-
-    # TODO: missing color bars / legend
 
     # Add scale bar
     add_scale_bar(ax, lon_range, lat_range)
@@ -1574,12 +1574,11 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
 
 def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, signed_dist=None, output_image="flow_output.png", 
          attribute2_max=None, attribute2_min=None, attribute3_max=None, attribute3_min=None, attribute4_max=None, attribute4_min=None,
-         attribute3_norm=None, attribute3_cmap='viridis', attribute3_label="Depth",
+         attribute3_norm=None, attribute3_cmap='viridis', attribute3_label="Topography",
          plot_title="Flow as Dashed Contours", num_contours=6,
          min_linewidth=None, max_linewidth=None, scale_factor=None,
          MIN_DASH=None, MAX_DASH=None, chunk_size=40, DASH_JITTER=0.05, MAX_SUBSEG_LEN=0.02,
-         use_texture=True, texture_path='parchment_texture.jpg', texture_alpha=1,
-         auto_scale=True):
+         use_texture=True, texture_path='parchment.jpg', texture_alpha=1, auto_scale=True):
     """
     Generate flow visualisation with dashed contours based on multiple attributes.
     
@@ -1703,21 +1702,33 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             scale_factor = 1.0
     
     # Ensure MAX_DASH is valid relative to chunk_size
-    MAX_DASH = min(chunk_size / 2, MAX_DASH)  
+    MAX_DASH = min(chunk_size / 2, MAX_DASH)
 
-    # Set up figure
-    fig, ax = plt.subplots(figsize=(10, 8))
+    # prepare legend arrays
+    legend_contourwidths = []
+    if attribute4 is not None:
+        for wvalue in [.0, 0.5, 1.0]:
+            width_value = min_linewidth + wvalue * (max_linewidth - min_linewidth)
+            legend_contourwidths.append(width_value)
+    legend_contourstyles = []
+    legend_contourstyles_labels = []
+    if attribute2 is not None:
+        for svalue in [.0, 0.5, 1.0]:
+            mnv = np.min(attribute2)
+            mxv = np.max(attribute2)
+            attrib_value = mnv + svalue * (mxv - mnv)
+            dash_range = MAX_DASH - MIN_DASH
+            base_dash = MAX_DASH - (svalue * dash_range * 0.8)
+            base_gap = base_dash * 0.6  # Gap shorter than dash
+            base_dash *= scale_factor
+            base_gap *= scale_factor
+            legend_contourstyles.append((base_dash, base_gap))
+            legend_contourstyles_labels.append(attrib_value)
 
-    # Add texture background
-    if use_texture:
-        try:
-            img = plt.imread(texture_path)
-            ax.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()], 
-                    aspect='auto', alpha=texture_alpha, zorder=0)
-        except FileNotFoundError:
-            print(f"Texture file {texture_path} not found. Proceeding without it.")
-            pass
 
+    # ----------------------------------------- #
+    # ------ Prepare data for plotting -------- #
+    # ----------------------------------------- #
     # Define contour levels based on attribute1
     valid_data = attribute1.values[~np.isnan(attribute1.values)]
 
@@ -1741,12 +1752,12 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
 
     # remove duplicates
     contour_levels = np.unique(contour_levels)
-    contour_levels = contour_levels[contour_levels > min_attr1] 
+    contour_levels = contour_levels[contour_levels > min_attr1]
 
     if len(contour_levels) < 2:
         # Fallback linear levels
-        contour_levels = np.linspace(min_attr1 + data_range * 0.1, 
-                                    max_attr1 - data_range * 0.1, 
+        contour_levels = np.linspace(min_attr1 + data_range * 0.1,
+                                    max_attr1 - data_range * 0.1,
                                     max(2, num_contours // 2))
 
     # check that levels are strictly increasing
@@ -1757,21 +1768,12 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
 
     print(f"Generated {len(contour_levels)} contour levels ranging from {contour_levels[0]:.6f} to {contour_levels[-1]:.6f}")
 
-    # Generate contours based on attribute1
-    try:
-        CS = ax.contour(lon, lat, attribute1, levels=contour_levels, colors="none", linewidths=0.8)
-    except ValueError as e:
-        print(f"Error generating contours: {e}")
-        print(f"Contour levels: {contour_levels}")
-        print(f"Data shape: {attribute1.shape}, range: [{min_attr1:.6f}, {max_attr1:.6f}]")
-        return None
-    
     # Calculate attribute2 min/max for dash pattern
     if attribute2_min is None:
         attribute2_min = np.nanmin(attribute2)
     if attribute2_max is None:
         attribute2_max = np.nanmax(attribute2)
-        
+
     if auto_scale:
         # Get percentile-based min/max
         valid_values = attribute2.values[~np.isnan(attribute2.values)]
@@ -1779,15 +1781,15 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         robust_max = np.percentile(valid_values, 95)
         attribute2_min = robust_min
         attribute2_max = robust_max
-    
-    
+
+
     # Calculate attribute4 min/max if provided (for line width)
     if attribute4 is not None:
         if attribute4_min is None:
             attribute4_min = np.nanmin(attribute4)
         if attribute4_max is None:
             attribute4_max = np.nanmax(attribute4)
-            
+
 
         if auto_scale:
             # Get percentile-based min/max
@@ -1796,6 +1798,41 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             robust_max = np.percentile(valid_values, 95)
             attribute4_min = robust_min
             attribute4_max = robust_max
+
+    # ---------------- #
+    # Plot the results #
+    # ---------------- #
+    # fig, ax = plt.subplots(figsize=(10, 8))
+    datafig = plt.figure(figsize=(12, 8))
+    dataaxis = datafig.add_axes([0.14, 0.11, 0.75, 0.78])
+    dataaxis.set_xlim([lon.min(), lon.max()])
+    dataaxis.set_ylim([lat.min(), lat.max()])
+
+    # Add texture background
+    if use_texture:
+        try:
+            img = plt.imread(texture_path)
+            dataaxis.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()],
+                    aspect='auto', alpha=texture_alpha, zorder=0)
+        except FileNotFoundError:
+            print(f"Parchment texture file {texture_path} not found. Proceeding without it.")
+            pass
+
+    # Generate contours based on attribute1
+    def fmt(x):
+        s = f"{x:.1f}"
+        if s.endswith("0"):
+            s = f"{x:.0f}"
+        return rf"{s} \%" if plt.rcParams["text.usetex"] else f"{s} %"
+
+    try:
+        CS = dataaxis.contour(lon, lat, attribute1, levels=contour_levels, colors="none", linewidths=0.8, zorder=1)
+        dataaxis.clabel(CS, CS.levels, fmt=fmt, fontsize=10)
+    except ValueError as e:
+        print(f"Error generating contours: {e}")
+        print(f"Contour levels: {contour_levels}")
+        print(f"Data shape: {attribute1.shape}, range: [{min_attr1:.6f}, {max_attr1:.6f}]")
+        return None
     
     # 2D interpolator for attribute2  dash pattern
     attribute2_interpolator = RegularGridInterpolator(
@@ -2000,8 +2037,9 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             linestyles=all_styles,
             colors="k",
             linewidths=all_widths,
+            zorder=2
         )
-        ax.add_collection(lc)
+        dataaxis.add_collection(lc)
     else:
         print("No valid segments to plot.")
 
@@ -2033,28 +2071,23 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
                 attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
 
         # Plot attribute3 as background
-        cs_attr3 = ax.pcolormesh(
+        cs_attr3 = dataaxis.pcolormesh(
             lon,
             lat,
             attribute3,
             shading='gouraud',
             cmap=attribute3_cmap,
             norm=attribute3_norm,
-            alpha=0.6  
+            alpha=0.6,
+            zorder=3
         )
-        if attribute3_label == "Depth":
-            attribute3_label = "Elevation (m)"
-        elif attribute3_label == "Temperature":
-            attribute3_label = "Temperature (°C)"
-        elif attribute3_label == "Flow Magnitude":
-            attribute3_label = "Flow Magnitude (m/s)"
         # TODO: isn't rendered = where are they ? those need to be axis elements, not figure elements, if I'm not mistaken
-        cbar_attr3 = fig.colorbar(cs_attr3, ax=ax, label=attribute3_label)
+        # cbar_attr3 = fig.colorbar(cs_attr3, ax=ax, label=attribute3_label)
     
     # Plot shoreline if signed_dist is provided
     if signed_dist is not None:
-        shoreline = ax.contour(lon, lat, signed_dist, levels=[0], 
-                             colors='black', linewidths=0.8, linestyles='solid')
+        shoreline = dataaxis.contour(lon, lat, signed_dist, levels=[0],
+                             colors='black', linewidths=0.8, linestyles='solid', zorder=4)
 
 
     # Add grid lines for scale reference
@@ -2085,65 +2118,116 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     lat_grid = np.arange(lat_start, lat_end + lat_spacing/2, lat_spacing)
     
     # Draw grid lines
-    ax.grid(False)  # Disable default grid
+    dataaxis.grid(False)  # Disable default grid
     
     # Add custom grid lines
     for x in lon_grid:
-        ax.axvline(x=x, color=grid_color, linestyle=grid_linestyle, 
+        dataaxis.axvline(x=x, color=grid_color, linestyle=grid_linestyle,
                   linewidth=grid_linewidth, alpha=grid_alpha, zorder=0)
     
     for y in lat_grid:
-        ax.axhline(y=y, color=grid_color, linestyle=grid_linestyle, 
+        dataaxis.axhline(y=y, color=grid_color, linestyle=grid_linestyle,
                   linewidth=grid_linewidth, alpha=grid_alpha, zorder=0)
     
     # Add ticks at grid line positions
-    ax.set_xticks(lon_grid)
-    ax.set_yticks(lat_grid)
+    dataaxis.set_xticks(lon_grid)
+    dataaxis.set_yticks(lat_grid)
     
     # Format tick labels to reduce clutter
-    ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
-    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
+    dataaxis.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
+    dataaxis.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
 
     # Add compass rose if signed_dist is provided
     if signed_dist is not None:
         compass_position = add_compass_rose(
-            ax, lon, lat, signed_dist, 
+            dataaxis, lon, lat, signed_dist,
             size_factor=0.06, 
             style='traditional',
             color='black',
             border_color='white',
-            alpha=0.8
+            alpha=0.8,
         )
-    ax.set_title(plot_title)
-    print(f"Added compass rose at position {compass_position}")
-    ax.set_xlim(lon.min(), lon.max())
-    ax.set_ylim(lat.min(), lat.max())
-    add_scale_bar(ax, lon_range, lat_range)
+        print(f"Added compass rose at position {compass_position}")
+
+    # Set title and labels
+    dataaxis.set_title(plot_title)  # => figure
+    dataaxis.set_xlabel('lon [°]')
+    dataaxis.set_ylabel('lat [°]')
+    # dataaxis.set_xlim(lon.min(), lon.max())
+    # dataaxis.set_ylim(lat.min(), lat.max())
+
+    # Legend / colourbar for the contour density itself (see previous contour plots)
+    ax_cbar_contourdensity = datafig.add_axes([0.055, 0.1, 0.02, 0.8])
+    ax_cbar_contourdensity.set_facecolor("white")
+    ax_cbar_contourdensity.yaxis.set_ticks_position('left')
+    ax_cbar_contourdensity.yaxis.set_label_position('right')
+    if attribute1 is not None:
+        label_base = ""
+        if hasattr(attribute1, 'name'):
+            label_base=f'{attribute1.name}'
+        cbar_attr1 = datafig.colorbar(CS, cax=ax_cbar_contourdensity, ticks=ticker.AutoLocator(), extend='both',
+                                       orientation='vertical', label=label_base, format='%.0e')
+
+    # Legend / colourbar for the background colourmap
+    ax_cbar_bg_colourmap = datafig.add_axes([0.915, 0.1, 0.02, 0.8])
+    ax_cbar_bg_colourmap.set_facecolor("white")
+    ax_cbar_bg_colourmap.yaxis.set_ticks_position('right')
+    ax_cbar_bg_colourmap.yaxis.set_label_position('left')
+    if attribute3 is not None:
+        cbar_attr3 = datafig.colorbar(cs_attr3,  cax=ax_cbar_bg_colourmap, ticks=ticker.AutoLocator(), orientation='vertical')
+        if attribute3_label == "Topography":
+            attribute3_label = "Elevation (m)"
+        elif attribute3_label == "Temperature":
+            attribute3_label = "Temperature (°C)"
+        elif attribute3_label == "VelocityMagnitude":
+            attribute3_label = "Velocity Magnitude (m/s)"
+        cbar_attr3.set_label(attribute3_label)
+
+    legend_elements = []
+    # Legend / colourbar for contour dash pattern
+    if not isinstance(all_styles, str) and len(all_styles) > 1:
+        label_base = ""
+        if hasattr(attribute2, 'name'):
+            label_base=f'{attribute2.name}'
+        for i in range(len(legend_contourstyles)):
+            legend_elements.append(Line2D([0], [0], color='black', lw=1, linestyle=legend_contourstyles[i], label=label_base + ': ' + f'{legend_contourstyles_labels[i]}'))
+
+    # Legend / colourbar for contour width
+    if not isinstance(all_widths, str):
+        label_base = ""
+        if hasattr(attribute4, 'name'):
+            label_base=f'{attribute4.name}'
+        for lengthitem in legend_contourwidths:  # TODO: pregenerate that field of stroke lengths
+            legend_elements.append(Line2D([0], [lengthitem], color='black', lw=1, label=label_base+': '+f'{lengthitem}'))
+
+    # Finalize the in-plot legend
+    dataaxis.legend(handles=legend_elements, loc='upper right')  # , bbox_to_anchor=(0.5, -0.05),
+    # Add scale bar
+    add_scale_bar(dataaxis, lon_range, lat_range)
     plt.tight_layout()
 
-    # TODO: add legend / axis bars
-    
     # Save the figure
     plt.savefig(output_image, dpi=600, bbox_inches='tight')
     print(f"Figure saved to {output_image}")
     plt.close()
     
     # Return generated elements and auto-scaled parameters for potential further use
-    return {
-        'segments': all_segments,
-        'styles': all_styles,
-        'widths': all_widths,
-        'auto_scaled_params': {
-            'MIN_DASH': MIN_DASH,
-            'MAX_DASH': MAX_DASH,
-            'min_linewidth': min_linewidth,
-            'max_linewidth': max_linewidth,
-            'scale_factor': scale_factor,
-            'chunk_size': chunk_size,
-            'attribute2_range': (attribute2_min, attribute2_max),
-            'attribute4_range': (attribute4_min, attribute4_max) if attribute4 is not None else None
-        }
-    }
+    # return {
+    #     'segments': all_segments,
+    #     'styles': all_styles,
+    #     'widths': all_widths,
+    #     'auto_scaled_params': {
+    #         'MIN_DASH': MIN_DASH,
+    #         'MAX_DASH': MAX_DASH,
+    #         'min_linewidth': min_linewidth,
+    #         'max_linewidth': max_linewidth,
+    #         'scale_factor': scale_factor,
+    #         'chunk_size': chunk_size,
+    #         'attribute2_range': (attribute2_min, attribute2_max),
+    #         'attribute4_range': (attribute4_min, attribute4_max) if attribute4 is not None else None
+    #     }
+    # }
+    return True
 
 def load_sample_data():
     """
