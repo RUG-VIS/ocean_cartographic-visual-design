@@ -2110,7 +2110,8 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             alpha=attribute3_absnorm,
             zorder=2
         )
-        # TODO: isn't rendered = where are they ? those need to be axis elements, not figure elements, if I'm not mistaken
+        # TODO: isn't rendered = where are they ? those need to be axis elements, not figure elements, if I'm not mistaken ...
+        # TODO: [DONE]
         # cbar_attr3 = fig.colorbar(cs_attr3, ax=ax, label=attribute3_label)
     
     # Plot shoreline if signed_dist is provided
@@ -2191,17 +2192,19 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     ax_cbar_contourdensity.set_facecolor("white")
     if attribute1 is not None:
         sm = cm.ScalarMappable(cmap=LinearSegmentedColormap.from_list("Blacks", [(1,1,1), (0,0,0)]), norm=Normalize(vmin=min_attr1, vmax=max_attr1))
-        sm.set_array(np.linspace(min_attr1, max_attr1, 6))
-        cbar_attr1 = datafig.colorbar(sm, cax=ax_cbar_contourdensity, ticks=ticker.MaxNLocator(6), orientation='vertical')  # , extend='both', format='%.0e')
-        cbar_label = ""
+        sm.set_array(np.linspace(min_attr1, max_attr1, num_contours))
+        cbar_attr1 = datafig.colorbar(sm, cax=ax_cbar_contourdensity, ticks=ticker.MaxNLocator(num_contours), orientation='vertical')  # , extend='both', format='%.0e')
+        cbar_label = "Contour levels: "
         if attribute1_label == "Topography":
-            cbar_label = "Elevation (m)"
+            cbar_label += "Elevation (m)"
+        elif attribute1_label == "Bathymetry":
+            cbar_label += "Depth (m)"
         elif attribute1_label == "Temperature":
-            cbar_label = "Temperature (°C)"
+            cbar_label += "Temperature (°C)"
         elif attribute1_label == "VelocityMagnitude":
-            cbar_label = "Velocity Magnitude (m/s)"
+            cbar_label += "Velocity Magnitude (m/s)"
         elif attribute1_label == "Divergence":
-            cbar_label = "Divergence (1/s)"
+            cbar_label += "Divergence (1/s)"
         cbar_attr1.set_label(cbar_label)
         # ax_cbar_contourdensity.xaxis.set_ticks_position('bottom')
         # ax_cbar_contourdensity.xaxis.set_label_position('top')
@@ -2218,6 +2221,8 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         cbar_label = ""
         if attribute3_label == "Topography":
             cbar_label = "Elevation (m)"
+        elif attribute3_label == "Bathymetry":
+            cbar_label += "Depth (m)"
         elif attribute3_label == "Temperature":
             cbar_label = "Temperature (°C)"
         elif attribute3_label == "VelocityMagnitude":
@@ -2237,6 +2242,9 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         if attribute2_label == "Topography":
             # label_base = "Elevation (m)"
             unit_base = "m"
+        elif attribute2_label == "Bathymetry":
+            # label_base = "Depth (m)"
+            unit_base = "m"
         elif attribute2_label == "Temperature":
             # label_base = "Temperature (°C)"
             unit_base = "°C"
@@ -2255,13 +2263,15 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         unit_base = ""
         if attribute4_label == "Topography":
             unit_base = "m"
+        elif attribute4_label == "Bathymetry":
+            unit_base = "m"
         elif attribute4_label == "Temperature":
             unit_base = "°C"
         elif attribute4_label == "VelocityMagnitude":
             unit_base = "m/s"
         elif attribute4_label == "Divergence":
             unit_base = "1/s"
-        for i in range(len(legend_contourwidths)):  # TODO: pregenerate that field of stroke lengths
+        for i in range(len(legend_contourwidths)):  # TODO: pregenerate that field of contour width [DONE]
             widthitem = legend_contourwidths[i]
             widthlabel = legend_contourwidths_labels[i]
             itemlabel = "{:.3f} {}".format(widthlabel, unit_base)
@@ -2274,7 +2284,7 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     # plt.tight_layout()
 
     # Save the figure
-    plt.savefig(output_image, dpi=300) # , bbox_inches='tight'
+    plt.savefig(output_image, dpi=300, bbox_inches='tight') # , bbox_inches='tight'
     print(f"Figure saved to {output_image}")
     plt.close()
     
@@ -2317,15 +2327,35 @@ def load_sample_data():
     # v = ds2["vo"].isel(time=0)  # Northward velocity (m/s)
     # u = np.squeeze(ds2["uo"].data[0])
     u = np.squeeze(ds2["uo"].data)[0]
+    u_attrs = ds2["uo"].attrs
+    # print("u-attrs: {}".format(u_attrs))
+    if "scale_factor" in u_attrs.keys():
+        scalefactor = u_attrs["scale_factor"]
+        print("U has a scale-factor of {}. Rescaling values ...".format(scalefactor))
+        u = u * scalefactor
+    if "add_offset" in u_attrs.keys():
+        offset = u_attrs["add_offset"]
+        print("U has an active offset of {}. Applying offset ...".format(offset))
+        u = u + offset
     # u = u.fillna(.0)
     u = np.nan_to_num(u, copy=False, nan=.0, posinf=.0, neginf=.0)
-    print(u.shape)
+    # print(u.shape)
     v = np.squeeze(ds2["vo"].data)[0]
+    v_attrs = ds2["vo"].attrs
+    # print("v-attrs: {}".format(v_attrs))
+    if "scale_factor" in v_attrs.keys():
+        scalefactor = v_attrs["scale_factor"]
+        print("V has a scale-factor of {}. Rescaling values ...".format(scalefactor))
+        v = v * scalefactor
+    if "add_offset" in v_attrs.keys():
+        offset = v_attrs["add_offset"]
+        print("V has an active offset of {}. Applying offset ...".format(offset))
+        v = v + offset
     # v = v.fillna(.0)
     v = np.nan_to_num(v, copy=False, nan=.0, posinf=.0, neginf=.0)
     in_lat = ds2["latitude"].data
     in_lon = ds2["longitude"].data
-    print("in_lat {}; in_lon {}".format(in_lat.shape, in_lon.shape))
+    # print("in_lat {}; in_lon {}".format(in_lat.shape, in_lon.shape))
     
     # Load dataset for temperature data
     ds3 = xr.open_dataset(os.path.join(temperature_dir, temperature_file))
@@ -2443,6 +2473,9 @@ def load_sample_data():
 
     # Modified elevation for topography -> TODO: call it topography !!!! [DONE]
     topography = np.where(elevation <= 0, .0, elevation)
+
+    # Modified elevation for bathymetry
+    bathymetry = np.abs(np.where(elevation < .0, elevation, .0))
     
     # Normalize temperature data
     temp_min = np.nanmin(temp)
@@ -2468,6 +2501,7 @@ def load_sample_data():
         'lon': lon, 
         'elevation': elevation,
         'topography': topography,
+        'bathymetry': bathymetry,
         'u': u, 
         'v': v, 
         'temp': temp,
@@ -2508,7 +2542,8 @@ def generate_all_possible_mappings(data, output_dir="visualisation_outputs"):
         'temp': 'Temperature',
         'velmag': 'VelocityMagnitude',
         'flow_divergence': 'Divergence',
-        'topography': 'Topography'
+        'topography': 'Topography',
+        'bathymetry': 'Bathymetry'
         # 'elev_modified': 'Depth'
     }
     
@@ -2944,11 +2979,13 @@ def generate_all_flow_combinations(data, variables, output_dir):
             elif background_var == "topography":  # elev_modified
                 # attribute3_cmap = plt.cm.get_cmap("BrBG_r")
                 attribute3_cmap = plt.colormaps.get_cmap("YlOrBr")
+            elif background_var == "bathymetry":
+                attribute3_cmap = plt.colormaps.get_cmap("Greys")
             elif background_var == 'temp':
                 attribute3_cmap = 'bwr'
             else:
                 # attribute3_cmap = plt.cm.get_cmap("viridis")
-                attribute3_cmap = plt.colormaps.get_cmap("Greys_r")  # Greys
+                attribute3_cmap = plt.colormaps.get_cmap("Greys")  # Greys
         
         # Create title components
         title_parts = [
