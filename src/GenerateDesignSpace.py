@@ -46,6 +46,7 @@ temperature_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis
 temperature_file = "metoffice_foam1_amm7_NWS_TEM_b20240103_dm20240101.nc"  # input_netcdf3
 # output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowimages"
 output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
+output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_stipples"
 
 def round_to_nice(x):
     magnitude = 10 ** np.floor(np.log10(x))
@@ -1247,7 +1248,7 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
            attribute1_label="Contour Lines", attribute2_label="Point Density", attribute3_label="Background Color",
            plot_title="Stipple Visualisation", attribute3_cmap="viridis", 
            num_contours=6, marker_size=12, marker_color="k", marker_shape="o",
-           min_gap=None, max_gap=None, flow_scaling=0.7, background_alpha=0.7):
+           min_gap=None, max_gap=None, flow_scaling=0.7, auto_scale=False):
     """
     Generate stipple visualisation based on attribute values and save the figure.
     
@@ -1309,8 +1310,8 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
         Maximum gap between markers at minimum attribute2 value, default is 0.05
     flow_scaling : float, optional
         Exponent for non-linear scaling of attribute2 to marker spacing, default is 0.7
-    background_alpha : float, optional
-        Alpha transparency for the background pcolormesh, default is 0.4
+    auto_scale: boolean, optiona,
+        Rescales colourmap to percentiles (True) instead of min-max (False)
     """
 
     # Calculate geographic extents for auto-scaling
@@ -1335,43 +1336,25 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
     if attribute1_norm is None:
         attribute1_norm = plt.Normalize(vmin=attribute1_min, vmax=attribute1_max)
     
-    # For attribute2 (density) use attribute1 if not provided
+    # For attribute2 (density) use attribute1 if not provided; abs to avoid negative values
+    density_attribute = attribute2 if attribute2 is not None else attribute1
     if attribute2 is not None:
         attribute2 = np.abs(attribute2) 
-        eps = 1e-6
-        attribute2 = xr.where(attribute2 == 0, eps, attribute2)
-    density_attribute = attribute2 if attribute2 is not None else attribute1
-    #abs to avoid negative values
+        # eps = np.info(np.float32)  # 1e-6
+        # attribute2 = np.where(attribute2 == 0, eps, attribute2)  # float == 0 ? really ?
     
     # Ensure attribute2_min and attribute2_max are set if not provided (for density)
     if attribute2 is not None:
-        
+        if attribute2_min is not None:
             attribute2_min = np.nanmin(attribute2)
-        
+        if attribute2_max is not None:
             attribute2_max = np.nanmax(attribute2)
-        
-        
+        if attribute2_norm is not None:
             attribute2_norm = plt.Normalize(vmin=attribute2_min, vmax=attribute2_max)
     else:
         attribute2_min = attribute1_min
         attribute2_max = attribute1_max
         attribute2_norm = attribute1_norm
-    
-    # Set up figure
-    fig, ax = plt.subplots(figsize=(12, 10))
-    
-    # Determine which attribute to use for background coloration
-    background_data = attribute3 if attribute3 is not None else (attribute2 if attribute2 is not None else attribute1)
-    background_cmap = attribute3_cmap
-    background_label = attribute3_label if attribute3 is not None else (attribute2_label if attribute2 is not None else attribute1_label)
-    
-    # colorbar units 
-    if background_label == "Depth":
-        background_label = "Elevation (m)"
-    elif background_label == "Temperature":
-        background_label = "Temperature (°C)"
-    elif background_label == "Flow Magnitude":
-        background_label = "Flow Magnitude (m/s)"
 
     # Set up normalisation for background
     if attribute3 is not None:
@@ -1380,46 +1363,97 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
             attribute3_min = np.nanmin(attribute3)
         if attribute3_max is None:
             attribute3_max = np.nanmax(attribute3)
-        
         if attribute3_norm is None:
-            attribute3_norm = plt.Normalize(vmin=attribute3_min, vmax=attribute3_max)
-            
-        background_norm = attribute3_norm
-    elif attribute2 is not None:
-        # Use attribute2 for background if attribute3 is not provided
-        background_norm = attribute2_norm
-    else:
-        # Use attribute1 for background if neither attribute2 nor attribute3 is provided
-        background_norm = attribute1_norm
+            if auto_scale:
+                # Use robust percentile-based normalisation
+                valid_values = attribute3[~np.isnan(attribute3)]
+                if len(valid_values) > 0:
+                    robust_min = np.percentile(valid_values, 2)
+                    robust_max = np.percentile(valid_values, 98)
+                    attribute3_norm = Normalize(vmin=robust_min, vmax=robust_max)
+                else:
+                    attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
+            else:
+                attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
+    #     background_norm = attribute3_norm
+    # elif attribute2 is not None:
+    #     # Use attribute2 for background if attribute3 is not provided
+    #     background_norm = attribute2_norm
+    # else:
+    #     # Use attribute1 for background if neither attribute2 nor attribute3 is provided
+    #     background_norm = attribute1_norm
+
+    # Determine which attribute to use for background coloration
+    # background_data = attribute3 if attribute3 is not None else (attribute2 if attribute2 is not None else attribute1)
+    # background_cmap = attribute3_cmap
+    # background_label = attribute3_label if attribute3 is not None else (attribute2_label if attribute2 is not None else attribute1_label)
+
+    legend_stippledensity = []
+    legend_stippledensity_labels = []
+    if attribute2 is not None:
+        mnv = np.nanmin(attribute2)
+        mxv = np.nanmax(attribute2)
+        legend_gapmin = 1
+        legend_gapmax = 10
+        for svalue in [.0, 0.5, 1.0]:
+            attrib_value = mnv + svalue * (mxv - mnv)
+            # ratio = svalue ** flow_scaling
+            gap = legend_gapmax - (svalue * (legend_gapmax - legend_gapmin))
+            gap = np.clip(gap, legend_gapmin, legend_gapmax)
+            # print("Gap for svalue = {}: {}".format(svalue, gap))
+            legend_stippledensity.append((0, (1, gap)))
+            legend_stippledensity_labels.append(attrib_value)
+
+    # ---------------- #
+    # Plot the results #
+    # ---------------- #
+    # fig, ax = plt.subplots(figsize=(12, 10))
+    datafig = plt.figure(figsize=(12, 9))
+    dataaxis = datafig.add_axes([0.15, 0.11, 0.73, 0.78])
+    dataaxis.set_xlim([lon.min(), lon.max()])
+    dataaxis.set_ylim([lat.min(), lat.max()])
     
     # Add parchment texture background if available
     try:
         # img = plt.imread('parchment_texture.jpg')
         img = plt.imread(parchment_file)
-        ax.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()], 
-                aspect='auto', alpha=1, zorder=0)
+        dataaxis.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()],
+                aspect='auto', alpha=1.0, zorder=0)
     except FileNotFoundError as error:
         print("Parchment texture file not found. Proceeding without it.")
         # traceback.format_exc()
         logger.exception(error)
 
-    if attribute3_cmap != "viridis":
-        
+    if attribute3 is not None:
+        # do for pcolormesh alpha
+        attribute3_absmax = np.maximum(np.absolute(attribute3_min), np.absolute(attribute3_max))
+        attribute3_absnorm = np.abs(attribute3) / attribute3_absmax
+        attribute3_clipabs = np.maximum(np.minimum((attribute3_absnorm - 0.1) / 0.2, 1.0), .0)
         # Plot background coloration
-        im = ax.pcolormesh(lon, lat, background_data, cmap=background_cmap, 
-                        norm=background_norm, 
-                        shading= "gouraud", 
-                        alpha=background_alpha)
-        plt.colorbar(im, ax=ax, label=background_label)
+        cs_attr3 = dataaxis.pcolormesh(lon, lat, attribute3,
+                                       cmap=attribute3_cmap,
+                                       norm=attribute3_norm,
+                                       shading= "gouraud",
+                                       alpha=attribute3_clipabs,
+                                       zorder=1)
+        # plt.colorbar(im, ax=ax, label=background_label)
     
     # Draw invisible contour lines where we will sample points
-    CS = ax.contour(lon, lat, attribute1,
-                    levels=np.linspace(attribute1_min, attribute1_max, num_contours),
-                    colors="none")
+    def fmt(x):
+        s = f"{x:.1f}"
+        if s.endswith("0"):
+            s = f"{x:.0f}"
+        # return rf"{s} \%" if plt.rcParams["text.usetex"] else f"{s} %"
+        return f"{s}"
+
+    contour_levels = np.linspace(attribute1_min, attribute1_max, num_contours)
+    CS = dataaxis.contour(lon, lat, attribute1,
+                    levels=contour_levels,
+                    colors="none", linewidths=0.8, zorder=2)
     
     # Create an interpolator for density attribute
     density_interpolator = RegularGridInterpolator(
-        (lat, lon), density_attribute.values, bounds_error=False, fill_value=np.nan
+        (lat, lon), density_attribute, bounds_error=False, fill_value=np.nan
     )
     
     # Collect all marker positions (lon, lat)
@@ -1488,20 +1522,20 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
     if marker_points.size > 0:
         # marker_points[:, 0] => lon
         # marker_points[:, 1] => lat
-        ax.scatter(
+        dataaxis.scatter(
             marker_points[:, 0],
             marker_points[:, 1],
             s=marker_size,
             color=marker_color,
             marker=marker_shape,
-            zorder=10,
+            zorder=3,
         )
     
     # Add shoreline (where elevation=0)
     if signed_dist is not None:
-        ax.contour(lon, lat, signed_dist, levels=[0], colors="k", linewidths=1)
+        shoreline = dataaxis.contour(lon, lat, signed_dist, levels=[0], colors="k", linewidths=1, linestyles='solid', zorder=4)
     
-# Add grid lines for scale reference
+    # Add grid lines for scale reference
     grid_alpha = 0.8  # Transparency of grid lines
     grid_color = 'gray'
     grid_linewidth = 0.5
@@ -1529,54 +1563,127 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
     lat_grid = np.arange(lat_start, lat_end + lat_spacing/2, lat_spacing)
     
     # Draw grid lines
-    ax.grid(False)  # Disable default grid
+    dataaxis.grid(False)  # Disable default grid
     
     # Add custom grid lines
     for x in lon_grid:
-        ax.axvline(x=x, color=grid_color, linestyle=grid_linestyle, 
+        dataaxis.axvline(x=x, color=grid_color, linestyle=grid_linestyle,
                   linewidth=grid_linewidth, alpha=grid_alpha, zorder=0)
     
     for y in lat_grid:
-        ax.axhline(y=y, color=grid_color, linestyle=grid_linestyle, 
+        dataaxis.axhline(y=y, color=grid_color, linestyle=grid_linestyle,
                   linewidth=grid_linewidth, alpha=grid_alpha, zorder=0)
     
     # Add ticks at grid line positions
-    ax.set_xticks(lon_grid)
-    ax.set_yticks(lat_grid)
+    dataaxis.set_xticks(lon_grid)
+    dataaxis.set_yticks(lat_grid)
     
     # Format tick labels to reduce clutter
-    ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
-    ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.3f'))
+    dataaxis.xaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
+    dataaxis.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
     
     # Add compass rose if signed_dist is provided
     if signed_dist is not None:
         compass_position = add_compass_rose(
-            ax, lon, lat, signed_dist, 
+            dataaxis, lon, lat, signed_dist,
             size_factor=0.06,  # Adjust size relative to plot
             style='traditional',
             color='black',
             border_color='white',
-            alpha=0.8
+            alpha=1.0
         )
         print(f"Added compass rose at position {compass_position}")
 
-    # TODO: missing color bars / legend
-
     # Set title and labels
-    ax.set_title(plot_title)    
-    ax.set_xlabel('Longitude [°]')
-    ax.set_ylabel('Latitude [°]')
-    ax.set_xlim(lon.min(), lon.max())
-    ax.set_ylim(lat.min(), lat.max())
+    dataaxis.set_title(plot_title)
+    dataaxis.set_xlabel('lon [°]')
+    dataaxis.set_ylabel('lat [°]')
+    # dataaxis.set_xlim(lon.min(), lon.max())
+    # dataaxis.set_ylim(lat.min(), lat.max())
 
+    # TODO: missing color bars / legend
+    # ------------------------------------------------------------------------------ #
+    # LEGEND & COLOUR BARS
+    # ------------------------------------------------------------------------------ #
+
+    # Legend / colourbar for the contour density itself (see previous contour plots)
+    ax_cbar_contourdensity = datafig.add_axes([0.06, 0.1, 0.02, 0.8])
+    ax_cbar_contourdensity.set_facecolor("white")
+    if attribute1 is not None:
+        sm = cm.ScalarMappable(cmap=LinearSegmentedColormap.from_list("Blacks", [(1,1,1), (0,0,0)]), norm=attribute1_norm)
+        sm.set_array(contour_levels)
+        cbar_attr1 = datafig.colorbar(sm, cax=ax_cbar_contourdensity, ticks=contour_levels, orientation='vertical')  # , extend='both', format='%.0e'), ticker.MaxNLocator(num_contours)
+        cbar_label = "Stippling edge levels: "
+        if attribute1_label == "Topography":
+            cbar_label += "Elevation (m)"
+        elif attribute1_label == "Bathymetry":
+            cbar_label += "Depth (m)"
+        elif attribute1_label == "Temperature":
+            cbar_label += "Temperature (°C)"
+        elif attribute1_label == "VelocityMagnitude":
+            cbar_label += "Velocity Magnitude (m/s)"
+        elif attribute1_label == "Divergence":
+            cbar_label += "Divergence (1/s)"
+        cbar_attr1.set_label(cbar_label)
+        # ax_cbar_contourdensity.xaxis.set_ticks_position('bottom')
+        # ax_cbar_contourdensity.xaxis.set_label_position('top')
+        ax_cbar_contourdensity.yaxis.set_ticks_position('right')
+        ax_cbar_contourdensity.yaxis.set_label_position('left')
+
+    # Legend / colourbar for the background colourmap
+    ax_cbar_bg_colourmap = datafig.add_axes([0.92, 0.1, 0.02, 0.8])
+    ax_cbar_bg_colourmap.set_facecolor("white")
+    # ax_cbar_bg_colourmap.yaxis.set_ticks_position('right')
+    # ax_cbar_bg_colourmap.yaxis.set_label_position('left')
+    if attribute3 is not None:
+        cbar_attr3 = datafig.colorbar(cs_attr3, cax=ax_cbar_bg_colourmap, ticks=ticker.AutoLocator(), orientation='vertical')
+        cbar_label = ""
+        if attribute3_label == "Topography":
+            cbar_label = "Elevation (m)"
+        elif attribute3_label == "Bathymetry":
+            cbar_label += "Depth (m)"
+        elif attribute3_label == "Temperature":
+            cbar_label = "Temperature (°C)"
+        elif attribute3_label == "VelocityMagnitude":
+            cbar_label = "Velocity Magnitude (m/s)"
+        elif attribute3_label == "Divergence":
+            cbar_label = "Divergence (1/s)"
+        cbar_attr3.set_label(cbar_label)
+        # ax_cbar_bg_colourmap.xaxis.set_ticks_position('top')
+        # ax_cbar_bg_colourmap.xaxis.set_label_position('bottom')
+        ax_cbar_bg_colourmap.yaxis.set_ticks_position('left')
+        ax_cbar_bg_colourmap.yaxis.set_label_position('right')
+
+    legend_elements = []
+    # Legend / colourbar for contour dash pattern
+    if attribute2 is not None:
+        unit_base = ""
+        if attribute2_label == "Topography":
+            unit_base = "m"
+        elif attribute2_label == "Bathymetry":
+            unit_base = "m"
+        elif attribute2_label == "Temperature":
+            unit_base = "°C"
+        elif attribute2_label == "VelocityMagnitude":
+            unit_base = "m/s"
+        elif attribute2_label == "Divergence":
+            unit_base = "1/s"
+        for i in range(len(legend_stippledensity)):
+            itemlabel = "{:.2f} {}".format(legend_stippledensity_labels[i], unit_base)
+            legend_elements.append(Line2D([0], [0], color='black', lw=1, linestyle=legend_stippledensity[i], label=itemlabel))
+
+    # Finalize the in-plot legend
+    if len(legend_elements) > 0:
+        dataaxis.legend(handles=legend_elements, loc='upper right')
     # Add scale bar
-    add_scale_bar(ax, lon_range, lat_range)
+    add_scale_bar(dataaxis, lon_range, lat_range)
     # plt.tight_layout()
-    plt.savefig(output_image, dpi=600)
+    plt.savefig(output_image, dpi=300, bbox_inches='tight')
     print(f"Figure saved to {output_image}")
     plt.close()
     # Return marker points for potential further use
-    return marker_points
+    # return marker_points
+    return True
 
 #--------------------------------------------------------------------------
 # Flow Contours
@@ -1588,7 +1695,7 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
          plot_title="Flow as Dashed Contours", num_contours=6,
          min_linewidth=None, max_linewidth=None, scale_factor=None,
          MIN_DASH=None, MAX_DASH=None, chunk_size=40, DASH_JITTER=0.05, MAX_SUBSEG_LEN=0.02,
-         use_texture=True, texture_path=parchment_file, texture_alpha=1, auto_scale=True):
+         use_texture=True, texture_alpha=1, auto_scale=True):
     """
     Generate flow visualisation with dashed contours based on multiple attributes.
     
@@ -1657,8 +1764,6 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         Maximum subsegment length for breaking contours, default is 0.02
     use_texture : bool, optional
         Whether to use background texture, default is True
-    texture_path : str, optional
-        Path to texture image, default is 'parchment_texture.jpg'
     texture_alpha : float, optional
         Alpha transparency for texture, default is 0.3
     auto_scale : bool, optional
@@ -1830,11 +1935,11 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     # Add texture background
     if use_texture:
         try:
-            img = plt.imread(texture_path)
+            img = plt.imread(parchment_file)
             dataaxis.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()],
                     aspect='auto', alpha=texture_alpha, zorder=0)
         except FileNotFoundError as error:
-            print(f"Parchment texture file {texture_path} not found. Proceeding without it.")
+            print(f"Parchment texture file {parchment_file} not found. Proceeding without it.")
             # traceback.format_exc()
             logger.exception(error)
 
@@ -2175,7 +2280,7 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             style='traditional',
             color='black',
             border_color='white',
-            alpha=0.8,
+            alpha=1.0,
         )
         print(f"Added compass rose at position {compass_position}")
 
@@ -2186,26 +2291,31 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     # dataaxis.set_xlim(lon.min(), lon.max())
     # dataaxis.set_ylim(lat.min(), lat.max())
 
+    # ------------------------------------------------------------------------------ #
+    # LEGEND & COLOUR BARS
+    # ------------------------------------------------------------------------------ #
+
     # Legend / colourbar for the contour density itself (see previous contour plots)
     # ax_cbar_contourdensity = datafig.add_axes([0.055, 0.1, 0.02, 0.8])
     ax_cbar_contourdensity = datafig.add_axes([0.06, 0.1, 0.02, 0.8])
     ax_cbar_contourdensity.set_facecolor("white")
     if attribute1 is not None:
         sm = cm.ScalarMappable(cmap=LinearSegmentedColormap.from_list("Blacks", [(1,1,1), (0,0,0)]), norm=Normalize(vmin=min_attr1, vmax=max_attr1))
-        sm.set_array(np.linspace(min_attr1, max_attr1, num_contours))
-        cbar_attr1 = datafig.colorbar(sm, cax=ax_cbar_contourdensity, ticks=ticker.MaxNLocator(num_contours), orientation='vertical')  # , extend='both', format='%.0e')
-        cbar_label = "Contour levels: "
+        # sm.set_array(np.linspace(min_attr1, max_attr1, num_contours))
+        sm.set_array(contour_levels)
+        cbar_attr1 = datafig.colorbar(sm, cax=ax_cbar_contourdensity, ticks=contour_levels, orientation='vertical')  # , extend='both', format='%.0e'), ticker.MaxNLocator(num_contours)
+        ctrbar_label = "Contour levels: "
         if attribute1_label == "Topography":
-            cbar_label += "Elevation (m)"
+            ctrbar_label += "Elevation (m)"
         elif attribute1_label == "Bathymetry":
-            cbar_label += "Depth (m)"
+            ctrbar_label += "Depth (m)"
         elif attribute1_label == "Temperature":
-            cbar_label += "Temperature (°C)"
+            ctrbar_label += "Temperature (°C)"
         elif attribute1_label == "VelocityMagnitude":
-            cbar_label += "Velocity Magnitude (m/s)"
+            ctrbar_label += "Velocity Magnitude (m/s)"
         elif attribute1_label == "Divergence":
-            cbar_label += "Divergence (1/s)"
-        cbar_attr1.set_label(cbar_label)
+            ctrbar_label += "Divergence (1/s)"
+        cbar_attr1.set_label(ctrbar_label)
         # ax_cbar_contourdensity.xaxis.set_ticks_position('bottom')
         # ax_cbar_contourdensity.xaxis.set_label_position('top')
         ax_cbar_contourdensity.yaxis.set_ticks_position('right')
@@ -2555,14 +2665,14 @@ def generate_all_possible_mappings(data, output_dir="visualisation_outputs"):
     
     print("Generating visualisations for all possible mappings...")
     
-    # Generate all combinations for hatch visualisations
+    # ==== Generate all combinations for hatch visualisations ==== #
     #generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
     
-    # Generate all combinations for stipple visualisations
-    #generate_all_stipple_combinations(data, variables, output_dir)
+    # ==== Generate all combinations for stipple visualisations ==== #
+    generate_all_stipple_combinations(data, variables, output_dir)
     
-    # Generate all combinations for flow contour visualisations
-    generate_all_flow_combinations(data, variables, output_dir)
+    # ==== Generate all combinations for flow contour visualisations ==== #
+    # generate_all_flow_combinations(data, variables, output_dir)
     
     print(f"All possible mappings generated and saved to {output_dir}")
 
@@ -2849,13 +2959,16 @@ def generate_all_stipple_combinations(data, variables, output_dir):
             attribute3_max = np.nanmax(attribute3)
             attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
             if background_var == 'temp':
-                attribute3_cmap = 'bwr'
+                attribute3_cmap = plt.colormaps.get_cmap('bwr')
             elif background_var == 'velmag':
-                attribute3_cmap = 'PuBu'
+                attribute3_cmap = plt.colormaps.get_cmap('PuBu')
             elif background_var == "topography":  # elev_modified
-                attribute3_cmap = 'BrBG_r'
+                # attribute3_cmap = 'BrBG_r'
+                attribute3_cmap = plt.colormaps.get_cmap("YlOrBr")
+            elif background_var == "bathymetry":
+                attribute3_cmap = plt.colormaps.get_cmap('Greys')
             else:
-                attribute3_cmap = 'Greys_r'
+                attribute3_cmap = plt.colormaps.get_cmap('Greys')
        
         # Call the stipple function with the configured parameters
         try:
@@ -2880,7 +2993,8 @@ def generate_all_stipple_combinations(data, variables, output_dir):
                 attribute3_cmap=attribute3_cmap,
                 num_contours=6,
                 marker_size=8,
-                flow_scaling=0.7
+                flow_scaling=0.7,
+                auto_scale=True
             )
         except Exception as e:
             print(f"Error generating {filename}: {e}")
