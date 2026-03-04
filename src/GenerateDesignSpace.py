@@ -31,6 +31,7 @@ plt.rcParams.update({
     'axes.facecolor': 'white',
 })
 plot_dpi = 300
+skip_title_plotting = True
 
 # -----------------------------------------------------------------------------
 # General Parameters
@@ -817,7 +818,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     legend_hatchlengths = []
     legend_hatchlengths_labels = []
     legend_maxlen = 6
-    litems = [.0, 0.5, 1.0] if attribute4 is not None else [1.0,]
+    litems = [.0, 0.5, 1.0]
     fstelem = -1.0
     uniform_len = False
     if attribute4 is not None:
@@ -837,11 +838,20 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         legend_hatchlengths_labels.append(1.0)
     legend_hatchwidths = []
     legend_hatchwidths_labels = []
-    for factor in [.0, 0.5, 1.0]:
-        stroke_width = min_strokewidth + factor * (max_strokewidth - min_strokewidth)
-        attrval = attribute6_min + factor * (attribute6_max - attribute6_min)
-        legend_hatchwidths.append(stroke_width)
-        legend_hatchwidths_labels.append(attrval)
+    fstelem = -1.0
+    uniform_width = False
+    if attribute6 is not None:
+        fstelem = attribute6.flatten()[0]
+        uniform_width = np.allclose(attribute6, fstelem, rtol=np.finfo(np.float32).eps)
+    if (attribute6_min is not None) and (attribute6_max is not None) and not uniform_width:
+        for factor in [.0, 0.5, 1.0]:
+            stroke_width = min_strokewidth + factor * (max_strokewidth - min_strokewidth)
+            attrval = attribute6_min + factor * (attribute6_max - attribute6_min)
+            legend_hatchwidths.append(stroke_width)
+            legend_hatchwidths_labels.append(attrval)
+    else:
+        legend_hatchwidths.append(1.0)
+        legend_hatchwidths_labels.append(1.0)
 
     # legend_tuftsizes = []  # -> unused
     # cbar_tuft_colours = []  # -> unused
@@ -1910,7 +1920,7 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
     # Add scale bar
     add_scale_bar(dataaxis, lon_range, lat_range)
     # plt.tight_layout()
-    plt.savefig(output_image, dpi=300, bbox_inches='tight')
+    plt.savefig(output_image, dpi=plot_dpi, bbox_inches='tight')
     print(f"Figure saved to {output_image}")
     plt.close()
     # Return marker points for potential further use
@@ -2633,7 +2643,7 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     # plt.tight_layout()
 
     # Save the figure
-    plt.savefig(output_image, dpi=300, bbox_inches='tight') # , bbox_inches='tight'
+    plt.savefig(output_image, dpi=plot_dpi, bbox_inches='tight') # , bbox_inches='tight'
     print(f"Figure saved to {output_image}")
     plt.close()
     
@@ -3090,7 +3100,8 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
             title_parts.append(f"{variables[color_var]} (Background Color)")
             
         plot_title = f"Hatch: {', '.join(title_parts)}"
-        # plot_title = ""
+        if skip_title_plotting:
+            plot_title = ""
         
         # Call  hatch function with the configured parameters
         try:
@@ -3220,7 +3231,11 @@ def generate_all_stipple_combinations(data, variables, output_dir):
                 attribute3_cmap = plt.colormaps.get_cmap('Greys')
             else:
                 attribute3_cmap = plt.colormaps.get_cmap('Greys')
-       
+
+        plot_title = f"Stipple: {variables[contour_var]} (Contours), {variables[density_var]} (Stipple Density)" + (f", {variables[background_var]} (Background)" if background_var else "")
+        if skip_title_plotting:
+            plot_title = ""
+
         # Call the stipple function with the configured parameters
         try:
             stipple(
@@ -3238,8 +3253,7 @@ def generate_all_stipple_combinations(data, variables, output_dir):
                 attribute1_label=f"{variables[contour_var]}",
                 attribute2_label=f"{variables[density_var]}",
                 attribute3_label=f"{variables[background_var]}" if background_var else None,
-                plot_title=f"Stipple: {variables[contour_var]} (Contours), {variables[density_var]} (Stipple Density)" +
-                         (f", {variables[background_var]} (Background)" if background_var else ""),  # TODO: to be modfied
+                plot_title=plot_title,  # TODO: to be modfied [DONE]
                 output_image=output_path,
                 attribute3_cmap=attribute3_cmap,
                 num_contours=6,
@@ -3366,7 +3380,9 @@ def generate_all_flow_combinations(data, variables, output_dir):
         if background_var:
             title_parts.append(f"{variables[background_var]} (Background)")
             
-        plot_title = f"Flow Contour: {', '.join(title_parts)}"  # TODO: to be modified
+        plot_title = f"Flow Contour: {', '.join(title_parts)}"  # TODO: to be modified [DONE]
+        if skip_title_plotting:
+            plot_title = ""
         
         # Call the flow function with the configured parameters
         try:
