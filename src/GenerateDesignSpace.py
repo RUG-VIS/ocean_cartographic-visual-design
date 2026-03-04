@@ -44,9 +44,9 @@ currents_file = "metoffice_foam1_amm7_NWS_CUR_b20240103_dm20240101.nc"  # input_
 # input_netcdf3 = "ThesisTemps.nc"   # Path to input  temperature data
 temperature_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis2D-2024/temperature/"
 temperature_file = "metoffice_foam1_amm7_NWS_TEM_b20240103_dm20240101.nc"  # input_netcdf3
-# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowimages"
-output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
-output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_stipples"
+output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowhatches"
+# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
+# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_stipples"
 
 def round_to_nice(x):
     magnitude = 10 ** np.floor(np.log10(x))
@@ -524,10 +524,10 @@ def add_compass_rose(ax, lon, lat, signed_dist, min_size=0.01, position=None,
 def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None, attribute3=None, 
           attribute4=None, attribute5=None, attribute6=None, signed_dist=None, lon=None, lat=None, 
           water_mask=None, elev=None, topography=None, normalized_attribute1=None,
-          attribute5_norm=None, attribute5_cmap='RdBu_r', 
+          attribute5_norm=None, attribute5_cmap='RdBu_r', attribute1_label="", attribute2_label="", attribute3_label="",
+          attribute4_label="", attribute5_label="", attribute6_label="", auto_scale=False,
           output_image="hatch_output.png", plot_title="Flow as Handdrawn Hatches with Direction Markers",
-          use_attribute5_for_color=False,
-          base_density=None, density_scale_factor=0.1, decay_factor=5):  # elev_modified=None (replaced by topography)
+          use_attribute5_for_color=False, base_density=None, density_scale_factor=0.1, decay_factor=5):  # elev_modified=None (replaced by topography)
     """
     Generate hatches based on multiple attributes with automatic scaling based on geographic extent.
     
@@ -570,6 +570,20 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         Normalization for attribute5 values for color mapping, created automatically if None
     attribute5_cmap : str or matplotlib.colors.Colormap, optional
         Colormap for attribute5, default is 'RdBu_r'
+    attribute1_label: str, optional
+        Label string of the density attribute. Default: empty string
+    attribute2_label: str, optional
+        Label string of the zonal velocity attribute. Default: empty string
+    attribute3_label: str, optional
+        Label string of the meridional velocity attribute. Default: empty string
+    attribute4_label: str, optional
+        Label string of the hatch length attribute. Default: empty string
+    attribute5_label: str, optional
+        Label string of the background colourmap attribute. Default: empty string
+    attribute6_label: str, optional
+        Label string of the hatch width attribute. Default: empty string
+    auto_scale: boolean, optional
+        Calculate the attribute limits based on percentiles (True) or by the min-max (False). Default: False
     output_image : str, optional
         Path to save the output image, default is "hatch_output.png"
     plot_title : str, optional
@@ -655,21 +669,182 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
 
     # legend-related mapping containers
     val_varmod = np.random.uniform(-length_variance, length_variance)
-    legend_strokelengths = []
-    for factor in [.0, 0.5, 1.0]:
-        legendvalue = factor * max_stroke_length * 0.5 * (1 + val_varmod)
-        legend_strokelengths.append(legendvalue)
-    # legend_strokewidths = []  # -> unused
-    # legend_tuftsizes = []  # -> unused
-    # cbar_tuft_colours = []  # -> unused
     
-    # Create prerequisite data if not provided
-    
+    # ==== Create prerequisite data if not provided ==== #
     # Calculate attribute ranges
+    attribute1_norm = None
     if attribute1_min is None:
         attribute1_min = np.nanmin(attribute1)
     if attribute1_max is None:
         attribute1_max = np.nanmax(attribute1)
+    # Create normalisation for attribute1 if not provided
+    if auto_scale:
+        # Use robust percentile-based normalisation
+        valid_values = attribute1[~np.isnan(attribute1)]
+        if len(valid_values) > 0:
+            robust_min = np.percentile(valid_values, 2)
+            robust_max = np.percentile(valid_values, 98)
+            attribute1_norm = Normalize(vmin=robust_min, vmax=robust_max)
+        else:
+            attribute1_norm = Normalize(vmin=attribute1_min, vmax=attribute1_max)
+    else:
+        attribute1_norm = plt.Normalize(vmin=attribute1_min, vmax=attribute1_max)
+
+    # Handle normalized_attribute1 if not provided
+    if normalized_attribute1 is None:
+        attribute1_range = attribute1_max - attribute1_min
+        if attribute1_range > 0:
+            if isinstance(attribute1.values, np.ndarray):
+                normalized_attribute1 = (attribute1.values - attribute1_min) / attribute1_range
+            else:
+                normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
+        else:
+            normalized_attribute1 = np.zeros_like(attribute1.values)
+
+    # Set up normalisation for zonal velocity
+    attribute2_min = None
+    attribute2_max = None
+    attribute2_norm = None
+    if attribute2 is not None:
+        if attribute2_min is None:
+            attribute2_min = np.nanmin(attribute2)
+        if attribute2_max is None:
+            attribute2_max = np.nanmax(attribute2)
+        # Create normalisation for attribute2 if not provided
+        if auto_scale:
+            # Use robust percentile-based normalisation
+            valid_values = attribute2[~np.isnan(attribute2)]
+            if len(valid_values) > 0:
+                robust_min = np.percentile(valid_values, 2)
+                robust_max = np.percentile(valid_values, 98)
+                attribute2_norm = Normalize(vmin=robust_min, vmax=robust_max)
+                attribute2_min = robust_min
+                attribute2_max = robust_max
+            else:
+                attribute2_norm = Normalize(vmin=attribute2_min, vmax=attribute2_max)
+        else:
+            attribute2_norm = plt.Normalize(vmin=attribute2_min, vmax=attribute2_max)
+
+    # Set up normalisation for meridional velocity
+    attribute3_min = None
+    attribute3_max = None
+    attribute3_norm = None
+    if attribute3 is not None:
+        # Use attribute3 for background coloration
+        if attribute3_min is None:
+            attribute3_min = np.nanmin(attribute3)
+        if attribute3_max is None:
+            attribute3_max = np.nanmax(attribute3)
+        if auto_scale:
+            # Use robust percentile-based normalisation
+            valid_values = attribute3[~np.isnan(attribute3)]
+            if len(valid_values) > 0:
+                robust_min = np.percentile(valid_values, 2)
+                robust_max = np.percentile(valid_values, 98)
+                attribute3_norm = Normalize(vmin=robust_min, vmax=robust_max)
+            else:
+                attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
+        else:
+            attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
+
+    # Set up normalisation for hatch length
+    attribute4_min = None
+    attribute4_max = None
+    attribute4_norm = None
+    if attribute4 is not None:
+        # Use attribute4 for background coloration
+        if attribute4_min is None:
+            attribute4_min = np.nanmin(attribute4)
+        if attribute4_max is None:
+            attribute4_max = np.nanmax(attribute4)
+        if auto_scale:
+            # Use robust percentile-based normalisation
+            valid_values = attribute4[~np.isnan(attribute4)]
+            if len(valid_values) > 0:
+                robust_min = np.percentile(valid_values, 2)
+                robust_max = np.percentile(valid_values, 98)
+                attribute4_norm = Normalize(vmin=robust_min, vmax=robust_max)
+            else:
+                attribute4_norm = Normalize(vmin=attribute4_min, vmax=attribute4_max)
+        else:
+            attribute4_norm = Normalize(vmin=attribute4_min, vmax=attribute4_max)
+
+    # Set up normalisation for background colourmap
+    attribute5_min = None
+    attribute5_max = None
+    attribute5_norm = None
+    if attribute5 is not None:
+        # Use attribute5 for background coloration
+        if attribute5_min is None:
+            attribute5_min = np.nanmin(attribute5)
+        if attribute5_max is None:
+            attribute5_max = np.nanmax(attribute5)
+        if auto_scale:
+            # Use robust percentile-based normalisation
+            valid_values = attribute5[~np.isnan(attribute5)]
+            if len(valid_values) > 0:
+                robust_min = np.percentile(valid_values, 2)
+                robust_max = np.percentile(valid_values, 98)
+                attribute5_norm = Normalize(vmin=robust_min, vmax=robust_max)
+            else:
+                attribute5_norm = Normalize(vmin=attribute5_min, vmax=attribute5_max)
+        else:
+            attribute5_norm = Normalize(vmin=attribute5_min, vmax=attribute5_max)
+
+    # Set up normalisation for hatch width
+    attribute6_min = None
+    attribute6_max = None
+    attribute6_norm = None
+    if attribute6 is not None:
+        # Use attribute6 for background coloration
+        if attribute6_min is None:
+            attribute6_min = np.nanmin(attribute6)
+        if attribute6_max is None:
+            attribute6_max = np.nanmax(attribute6)
+        if auto_scale:
+            # Use robust percentile-based normalisation
+            valid_values = attribute6[~np.isnan(attribute6)]
+            if len(valid_values) > 0:
+                robust_min = np.percentile(valid_values, 2)
+                robust_max = np.percentile(valid_values, 98)
+                attribute6_norm = Normalize(vmin=robust_min, vmax=robust_max)
+            else:
+                attribute6_norm = Normalize(vmin=attribute6_min, vmax=attribute6_max)
+        else:
+            attribute6_norm = Normalize(vmin=attribute6_min, vmax=attribute6_max)
+
+    # create legend labels
+    legend_hatchlengths = []
+    legend_hatchlengths_labels = []
+    legend_maxlen = 6
+    litems = [.0, 0.5, 1.0] if attribute4 is not None else [1.0,]
+    fstelem = -1.0
+    uniform_len = False
+    if attribute4 is not None:
+        fstelem = attribute4.flatten()[0]
+        uniform_len = np.allclose(attribute4, fstelem, rtol=np.finfo(np.float32).eps)
+    if (attribute4_min is not None) and (attribute4_max is not None) and not uniform_len:
+        for factor in litems:
+            # legendvalue = factor * max_stroke_length * 0.5 * (1 + val_varmod)
+            hatchlen = 1 + (factor * legend_maxlen)
+            hatchgap = 1
+            attrval = attribute4_min + factor * (attribute4_max - attribute4_min)
+            # legend_contourstyles.append((0, (base_dash, base_gap)))
+            legend_hatchlengths.append((0, (hatchlen, hatchgap)))
+            legend_hatchlengths_labels.append(attrval)
+    else:
+        legend_hatchlengths.append((0, (legend_maxlen, 1)))
+        legend_hatchlengths_labels.append(1.0)
+    legend_hatchwidths = []
+    legend_hatchwidths_labels = []
+    for factor in [.0, 0.5, 1.0]:
+        stroke_width = min_strokewidth + factor * (max_strokewidth - min_strokewidth)
+        attrval = attribute6_min + factor * (attribute6_max - attribute6_min)
+        legend_hatchwidths.append(stroke_width)
+        legend_hatchwidths_labels.append(attrval)
+
+    # legend_tuftsizes = []  # -> unused
+    # cbar_tuft_colours = []  # -> unused
     
     # Create water mask from signed distance if not provided
     if water_mask is None and signed_dist is not None:
@@ -689,17 +864,6 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # elif topography is None:
     #     # Create a placeholder elev_modified (all zeros)
     #     topography = np.zeros(attribute1.shape, dtype=np.float32)
-    
-    # Handle normalized_attribute1 if not provided
-    if normalized_attribute1 is None:
-        attribute1_range = attribute1_max - attribute1_min
-        if attribute1_range > 0:
-            if isinstance(attribute1.values, np.ndarray):
-                normalized_attribute1 = (attribute1.values - attribute1_min) / attribute1_range
-            else:
-                normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
-        else:
-            normalized_attribute1 = np.zeros_like(attribute1.values)
 
     # ==== ==== ==== ==== ==== ==== ==== ==== ==== #
     # Calculate tuft density based on attribute1   #
@@ -720,9 +884,11 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             # Create a buffer zone around the shoreline
             # Exclude points that are too close to land (within shoreline_buffer distance)
             buffer_mask = np.abs(signed_dist) >= shoreline_buffer
-            selected_points = (rand_matrix < prob_matrix) & (np.abs(attribute4.values) >= 0) & buffer_mask
+            # selected_points = (rand_matrix < prob_matrix) & (np.abs(attribute4.values) >= 0) & buffer_mask
+            selected_points = (rand_matrix < prob_matrix) & (np.abs(attribute4) >= 0) & buffer_mask
         else:
-            selected_points = (rand_matrix < prob_matrix) & (np.abs(attribute4.values) >= 0)
+            # selected_points = (rand_matrix < prob_matrix) & (np.abs(attribute4.values) >= 0)
+            selected_points = (rand_matrix < prob_matrix) & (np.abs(attribute4) >= 0)
     else:
         if signed_dist is not None:
             buffer_mask = np.abs(signed_dist) >= shoreline_buffer
@@ -742,9 +908,10 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     np.random.shuffle(indices)
     rows = rows[indices]
     cols = cols[indices]
-    
-    attribute1_values = attribute1.values.copy()
-    attribute1_values = np.nan_to_num(attribute1_values, nan=attribute1_min)
+
+    # TODO: this is already done during the loading.
+    # attribute1_values = attribute1.values.copy()
+    # attribute1_values = np.nan_to_num(attribute1_values, nan=attribute1_min)
     
     # Prepare bezier curves
     all_segments = []
@@ -767,18 +934,24 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         lat_center = lat[r].item()
         
         # Safely get attribute values
-        if attribute2 is not None and hasattr(attribute2, 'values'):
-            attribute2_val = attribute2.values[r, c]
+        # if attribute2 is not None and hasattr(attribute2, 'values'):
+        if attribute2 is not None and isinstance(attribute3, np.ndarray):
+            # attribute2_val = attribute2.values[r, c]
+            attribute2_val = attribute2[r, c]
         else:
             attribute2_val = 1.0
             
-        if attribute3 is not None and hasattr(attribute3, 'values'):
-            attribute3_val = attribute3.values[r, c]
+        # if attribute3 is not None and hasattr(attribute3, 'values'):
+        if attribute3 is not None and isinstance(attribute3, np.ndarray):
+            # attribute3_val = attribute3.values[r, c]
+            attribute3_val = attribute3[r, c]
         else:
             attribute3_val = 0.0
         
-        if attribute4 is not None and hasattr(attribute4, 'values'):
-            attribute4_val = attribute4.values[r, c]
+        # if attribute4 is not None and hasattr(attribute4, 'values'):
+        if attribute4 is not None and isinstance(attribute4, np.ndarray):
+            # attribute4_val = attribute4.values[r, c]
+            attribute4_val = attribute4[r, c]
             # special case where divergence is used for length, use absolute value  # TODO: use absolute all the time - can't modulate a negative length ...
             # if "divergence (length)" in plot_title.lower():
             #     attribute4_val = np.abs(attribute4_val)
@@ -791,10 +964,12 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         else:
             attribute5_val = attribute5
             
-        if attribute6 is not None and hasattr(attribute6, 'values'):
-            attribute6_val = attribute6.values[r, c]
+        # if attribute6 is not None and hasattr(attribute6, 'values'):
+        if attribute6 is not None and isinstance(attribute6, np.ndarray):
+            attribute6_val = attribute6[r, c]
         else:
-            attribute6_val = attribute4_val
+            # attribute6_val = attribute4_val
+            attribute6_val = 1.0
         
         # Skip some lines randomly to create gaps
         if np.random.random() < gap_probability:
@@ -813,12 +988,12 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         
         # Dynamic dash length based on attribute4  with random variance
         base_stroke_length = -1.0
-        if attribute4 is not None and hasattr(attribute4, 'values'):
+        if attribute4 is not None and isinstance(attribute4, np.ndarray):
             # Variable length based on attribute4
-            attr4_max = np.nanmax(attribute4.values)
+            # attr4_max = np.nanmax(attribute4.values)
 
             # base_stroke_length = (attribute4_val / attr4_max if attr4_max > 0 else 0.5) * max_stroke_length
-            base_stroke_length = (np.abs(attribute4_val) / attr4_max if attr4_max > 0 else 0.5) * max_stroke_length
+            base_stroke_length = (np.abs(attribute4_val) / attribute4_max if attribute4_max > 0 else 0.5) * max_stroke_length
         else:
             # Uniform length when attribute4 is None
             base_stroke_length = max_stroke_length * 0.5
@@ -897,15 +1072,16 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
 
         # Calculate stroke width based on attribute6 (if provided) or use uniform width
         # TODO: well, it is 'in range' of attribute 6, but not based on it ...
-        if attribute6 is not None and hasattr(attribute6, 'values'):
+        # if attribute6 is not None and hasattr(attribute6, 'values'):
+        if attribute6 is not None and isinstance(attribute6, np.ndarray):
             # Normalize attribute6 (width) value
-            attr6_min = np.nanmin(attribute6.values)
-            attr6_max = np.nanmax(attribute6.values)
+            # attr6_min = np.nanmin(attribute6.values)
+            # attr6_max = np.nanmax(attribute6.values)
             
-            if attr6_min == attr6_max:
+            if attribute6_min == attribute6_max:
                 stroke_width = (min_strokewidth + max_strokewidth)/2.0
             else:
-                normalized_width = (attribute6_val - attr6_min) / (attr6_max - attr6_min)
+                normalized_width = (attribute6_val - attribute6_min) / (attribute6_max - attribute6_min)
                 stroke_width = min_strokewidth + normalized_width * (max_strokewidth - min_strokewidth)
         else:
             # Use a uniform width when attribute6 is not provided
@@ -933,8 +1109,10 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             tuft_lon, tuft_lat = tuft_position
             
             # Find grid indices for the tuft position
-            lon_idx = np.argmin(np.abs(lon.values - tuft_lon))
-            lat_idx = np.argmin(np.abs(lat.values - tuft_lat))
+            # lon_idx = np.argmin(np.abs(lon.values - tuft_lon))
+            # lat_idx = np.argmin(np.abs(lat.values - tuft_lat))
+            lon_idx = np.argmin(np.abs(lon - tuft_lon))
+            lat_idx = np.argmin(np.abs(lat - tuft_lat))
             
             # Check signed distance at this position
             try:
@@ -1010,7 +1188,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # ---------------- #
     # fig, ax = plt.subplots(figsize=(10, 8))
     datafig = plt.figure(figsize=(12, 8))
-    dataaxis = datafig.add_axes([0.14, 0.11, 0.75, 0.78])
+    dataaxis = datafig.add_axes([0.15, 0.11, 0.73, 0.78])
     dataaxis.set_xlim([lon.min(), lon.max()])
     dataaxis.set_ylim([lat.min(), lat.max()])
 
@@ -1018,7 +1196,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     try:
         img = plt.imread(parchment_file)
         dataaxis.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()],
-                aspect='auto', alpha=0.3, zorder=0)
+                        aspect='auto', alpha=1.0, zorder=0)
     except FileNotFoundError as error:
         print("Parchment texture file not found. Proceeding without it.")
         # traceback.format_exc()
@@ -1032,18 +1210,21 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # layers, that you then need to control the zorder
     
     if attribute5 is not None and use_attribute5_for_color:
+        attribute5_absmax = np.maximum(np.absolute(attribute5_min), np.absolute(attribute5_max))
+        attribute5_absnorm = np.abs(attribute5) / attribute5_absmax
+        # attribute5_clipabs = np.maximum(np.minimum((attribute3_absnorm - 0.1) / 0.2, 1.0), .0)
         # Use attribute5 for background coloration
-        cs_u = dataaxis.pcolormesh(
+        cs_attr5 = dataaxis.pcolormesh(
             lon,
             lat,
             attribute5,
             shading='gouraud',
             cmap=attribute5_cmap,
             norm=attribute5_norm,
-            alpha=0.5,  # means we still have a bit of parchment showing through
+            alpha=attribute5_absnorm,  # means we still have a bit of parchment showing through
             zorder=1,
-            edgecolor=None,
-            rasterize=True
+            # edgecolor=None,
+            # rasterize=True
         )
         background_shown = True
     
@@ -1053,7 +1234,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     ]
 
     # Create line collection for the hatches
-    lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, alpha=all_alphas)  # , zorder=2
+    lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, alpha=all_alphas, zorder=2)
     dataaxis.add_collection(lc)
     
     # Add tuft circles to indicate flow direction if enabled
@@ -1064,7 +1245,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     
     # Always add shoreline contour if signed_dist is provided
     if signed_dist is not None:
-        dataaxis.contour(lon, lat, signed_dist, levels=[0], colors='black', linewidths=0.8, linestyles='solid')
+        shoreline = dataaxis.contour(lon, lat, signed_dist, levels=[0], colors="k", linewidths=1, linestyles='solid', zorder=4)
     
     # Add grid lines for scale reference
     grid_alpha = 0.5 
@@ -1121,7 +1302,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             style='traditional',
             color='black',
             border_color='white',
-            alpha=0.8
+            alpha=1.0
         )
         print(f"Added compass rose at position {compass_position}")
 
@@ -1133,7 +1314,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # dataaxis.set_ylim(lat.min(), lat.max())
 
     # Legend / colourbar for density
-    ax_cbar_tuft_density = datafig.add_axes([0.055, 0.1, 0.02, 0.8])
+    ax_cbar_tuft_density = datafig.add_axes([0.06, 0.1, 0.02, 0.8])
     img = plt.imread("densitybar_vertical.png")
     ax_cbar_tuft_density.imshow(img, aspect='auto')
     ax_cbar_tuft_density.set_xlim(0, 1)
@@ -1141,22 +1322,35 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # ax_cbar_tuft_density.tight_layout()
     ax_cbar_tuft_density.xaxis.set_major_locator(ticker.NullLocator())
     ax_cbar_tuft_density.yaxis.set_major_locator(ticker.MaxNLocator(5))
-    if hasattr(attribute1, 'name'):
-        ax_cbar_tuft_density.set_ylabel(f'{attribute1.name}')
-    # ---- tick-coded inspiration ---- #
-    # ax.set_yticks(np.arange(0, 100.1, 100 / 3))
-    # xticks = np.arange(0.50, 101, 20)
-    # xlabels = [f'\\${x:1.2f}' for x in xticks]
-    # ax.set_xticks(xticks, labels=xlabels)
-    # ---- end: tick-coded inspiration ---- #
+    if hasattr(attribute5, 'name'):
+        ax_cbar_tuft_density.set_label(f'{attribute1.name}')
+    else:
+        density_cbar_label = ""
+        # colorbar units
+        # if background_label == "Depth":
+        if attribute1_label == "Topography":
+            density_cbar_label = "Elevation (m)"
+        elif attribute1_label == "Bathymetry":
+            density_cbar_label += "Depth (m)"
+        elif attribute1_label == "Temperature":
+            density_cbar_label = "Temperature (°C)"
+        elif attribute1_label == "VelocityMagnitude":
+            density_cbar_label = "Velocity Magnitude (m/s)"
+        ax_cbar_tuft_density.set_label(density_cbar_label)
+        # ax_cbar_tuft_density.xaxis.set_ticks_position('top')
+        # ax_cbar_tuft_density.xaxis.set_label_position('bottom')
+        ax_cbar_tuft_density.yaxis.set_ticks_position('right')
+        ax_cbar_tuft_density.yaxis.set_label_position('left')
 
     # Legend / colourbar for the background colourmap
-    ax_cbar_bg_colourmap = datafig.add_axes([0.915, 0.1, 0.02, 0.8])
+    ax_cbar_bg_colourmap = datafig.add_axes([0.92, 0.1, 0.02, 0.8])
     ax_cbar_bg_colourmap.set_facecolor("white")
     ax_cbar_bg_colourmap.yaxis.set_ticks_position('right')
     ax_cbar_bg_colourmap.yaxis.set_label_position('left')
     if use_attribute5_for_color and attribute5 is not None:
-        if attribute5_norm is not None:
+        cmap_bar = None
+        # if attribute5_norm is not None:
+        if not background_shown:
             # Create a ScalarMappable for the colorbar
             sm = cm.ScalarMappable(cmap=attribute5_cmap, norm=attribute5_norm)
             sm.set_array([])
@@ -1164,29 +1358,32 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             # Add colorbar for attribute5
             # cmap_bar = plt.colorbar(sm, ax=ax)
             cmap_bar = plt.colorbar(sm, cax=ax_cbar_bg_colourmap, ticks=ticker.AutoLocator(), orientation='vertical')
-            # Set an appropriate label based on what attribute5 represents
-            if hasattr(attribute5, 'name'):
-                cmap_bar.set_label(f'{attribute5.name}')
-            else:
-                cmap_bar.set_label('Divergence' if 'flow_divergence' in str(attribute5).lower() else 'Color Variable')
-        elif background_shown and cs_u is not None:
+        # elif background_shown and cs_attr5 is not None:
+        else:
             # Use the colormesh for the colorbar if we have one
             # cbar = fig.colorbar(cs_u, ax=ax)
-            cmap_bar = plt.colorbar(cs_u, cax=ax_cbar_bg_colourmap, ticks=ticker.AutoLocator(), orientation='vertical')
-            if hasattr(attribute5, 'name'):
-                cmap_bar.set_label(f'{attribute5.name}')
-            else:
-                background_label = ""
-                # colorbar units
-                # if background_label == "Depth":
-                if background_label == "Topography":
-                    background_label = "Elevation (m)"
-                elif background_label == "Temperature":
-                    background_label = "Temperature (°C)"
-                elif background_label == "VelocityMagnitude":
-                    background_label = "Velocity Magnitude (m/s)"
-                cmap_bar.set_label(background_label)
+            cmap_bar = plt.colorbar(cs_attr5, cax=ax_cbar_bg_colourmap, ticks=ticker.AutoLocator(), orientation='vertical')
+        if hasattr(attribute5, 'name'):
+            cmap_bar.set_label(f'{attribute5.name}')
+        else:
+            cbar_label = ""
+            if attribute5_label == "Topography":
+                cbar_label = "Elevation (m)"
+            elif attribute5_label == "Bathymetry":
+                cbar_label += "Depth (m)"
+            elif attribute5_label == "Temperature":
+                cbar_label = "Temperature (°C)"
+            elif attribute5_label == "VelocityMagnitude":
+                cbar_label = "Velocity Magnitude (m/s)"
+            elif attribute5_label == "Divergence":
+                cbar_label = "Divergence (1/s)"
+            cmap_bar.set_label(cbar_label)
+            # ax_cbar_bg_colourmap.xaxis.set_ticks_position('top')
+            # ax_cbar_bg_colourmap.xaxis.set_label_position('bottom')
+            ax_cbar_bg_colourmap.yaxis.set_ticks_position('left')
+            ax_cbar_bg_colourmap.yaxis.set_label_position('right')
 
+    legend_elements = []
     # Legend / colourbar for line colour
     if not isinstance(all_colors, str):
         # for filling this, we need the base colour map for it
@@ -1194,14 +1391,48 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
 
     # Legend / colourbar for alpha difficult to do - leave for now
 
-    legend_elements = []
-    # Legend / colourbar for line width
+    # Legend / colourbar for hatch length
+    if attribute4 is not None:
+        unit_base = ""
+        if attribute6_label == "Topography":
+            unit_base = "m"
+        elif attribute6_label == "Bathymetry":
+            unit_base = "m"
+        elif attribute6_label == "Temperature":
+            unit_base = "°C"
+        elif attribute6_label == "VelocityMagnitude":
+            unit_base = "m/s"
+        elif attribute6_label == "Divergence":
+            unit_base = "1/s"
+        for i in range(len(legend_hatchlengths)):
+            lengthitem = legend_hatchlengths[i]
+            lengthlabel = legend_hatchlengths_labels[i]
+            itemlabel = "{:.2f} {}".format(lengthlabel, unit_base)
+            legend_elements.append(Line2D([0], [0], color='black', linestyle=lengthitem, lw=1, label=itemlabel))
+
+    # Legend / colourbar for hatch width
     if not isinstance(all_linewidths, str):
-        label_base = ""
-        if hasattr(attribute1, 'name'):
-            label_base=f'{attribute1.name}'
-        for lengthitem in legend_strokelengths:
-            legend_elements.append(Line2D([0], [lengthitem], color='black', lw=1, label=label_base+': '+f'{lengthitem}'))
+        unit_base = ""
+        if attribute6_label == "Topography":
+            # label_base = "Elevation (m)"
+            unit_base = "m"
+        elif attribute6_label == "Bathymetry":
+            # label_base = "Depth (m)"
+            unit_base = "m"
+        elif attribute6_label == "Temperature":
+            # label_base = "Temperature (°C)"
+            unit_base = "°C"
+        elif attribute6_label == "VelocityMagnitude":
+            # label_base = "Velocity Magnitude ()"
+            unit_base = "m/s"
+        elif attribute6_label == "Divergence":
+            # label_base = "Divergence (1/s)"
+            unit_base = "1/s"
+        for i in range(len(legend_hatchwidths)):  # TODO: pregenerate that field of contour width [DONE]
+            widthitem = legend_hatchwidths[i]
+            widthlabel = legend_hatchwidths_labels[i]
+            itemlabel = "{:.2f} {}".format(widthlabel, unit_base)
+            legend_elements.append(Line2D([0], [0], color='black', lw=widthitem, label=itemlabel))
 
     # Finalize the in-plot legend
     dataaxis.legend(handles=legend_elements, loc='upper right')  # , bbox_to_anchor=(0.5, -0.05),
@@ -1345,11 +1576,11 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
     
     # Ensure attribute2_min and attribute2_max are set if not provided (for density)
     if attribute2 is not None:
-        if attribute2_min is not None:
+        if attribute2_min is None:
             attribute2_min = np.nanmin(attribute2)
-        if attribute2_max is not None:
+        if attribute2_max is None:
             attribute2_max = np.nanmax(attribute2)
-        if attribute2_norm is not None:
+        if attribute2_norm is None:
             attribute2_norm = plt.Normalize(vmin=attribute2_min, vmax=attribute2_max)
     else:
         attribute2_min = attribute1_min
@@ -1428,13 +1659,13 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
         # do for pcolormesh alpha
         attribute3_absmax = np.maximum(np.absolute(attribute3_min), np.absolute(attribute3_max))
         attribute3_absnorm = np.abs(attribute3) / attribute3_absmax
-        attribute3_clipabs = np.maximum(np.minimum((attribute3_absnorm - 0.1) / 0.2, 1.0), .0)
+        # attribute3_clipabs = np.maximum(np.minimum((attribute3_absnorm - 0.1) / 0.2, 1.0), .0)
         # Plot background coloration
         cs_attr3 = dataaxis.pcolormesh(lon, lat, attribute3,
                                        cmap=attribute3_cmap,
                                        norm=attribute3_norm,
                                        shading= "gouraud",
-                                       alpha=attribute3_clipabs,
+                                       alpha=attribute3_absnorm,
                                        zorder=1)
         # plt.colorbar(im, ax=ax, label=background_label)
     
@@ -1695,7 +1926,7 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
          plot_title="Flow as Dashed Contours", num_contours=6,
          min_linewidth=None, max_linewidth=None, scale_factor=None,
          MIN_DASH=None, MAX_DASH=None, chunk_size=40, DASH_JITTER=0.05, MAX_SUBSEG_LEN=0.02,
-         use_texture=True, texture_alpha=1, auto_scale=True):
+         use_texture=True, auto_scale=True):
     """
     Generate flow visualisation with dashed contours based on multiple attributes.
     
@@ -1730,6 +1961,8 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         Maximum value for attribute3
     attribute3_min : float, optional
         Minimum value for attribute3
+    attribute3_label : str, optional
+        Label for attribute3 on the colorbar, default is "Topography"
     attribute4_max : float, optional
         Maximum value for attribute4
     attribute4_min : float, optional
@@ -1740,8 +1973,6 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         Normalization for attribute3 values for color mapping
     attribute3_cmap : str or matplotlib.colors.Colormap, optional
         Colormap for attribute3, default is "viridis"
-    attribute3_label : str, optional
-        Label for attribute3 on the colorbar, default is "Topography"
     plot_title : str, optional
         Title for the plot, default is "Flow as Dashed Contours"
     num_contours : int, optional
@@ -1764,19 +1995,16 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         Maximum subsegment length for breaking contours, default is 0.02
     use_texture : bool, optional
         Whether to use background texture, default is True
-    texture_alpha : float, optional
-        Alpha transparency for texture, default is 0.3
     auto_scale : bool, optional
         Whether to automatically scale parameters based on data, default is True
     """
+    # Calculate data extent
+    lon_range = np.abs(lon.max() - lon.min())
+    lat_range = np.abs(lat.max() - lat.min())
+    data_extent = np.sqrt(lon_range**2 + lat_range**2)
 
     # Auto-scale parameters based on data characteristics if requested
     if auto_scale:
-        # Calculate data extent
-        lon_range = np.abs(lon.max() - lon.min())
-        lat_range = np.abs(lat.max() - lat.min())
-        data_extent = np.sqrt(lon_range**2 + lat_range**2)
-        
         # Auto-scale dash lengths based on data extent
         if MIN_DASH is None:
             MIN_DASH = max(1.0, data_extent * 0.004) 
@@ -1825,6 +2053,48 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     # Ensure MAX_DASH is valid relative to chunk_size
     MAX_DASH = min(chunk_size / 2, MAX_DASH)
 
+    # Calculate attribute2 min/max for dash pattern
+    if attribute2 is not None:
+        if attribute2_min is None:
+            attribute2_min = np.nanmin(attribute2)
+        if attribute2_max is None:
+            attribute2_max = np.nanmax(attribute2)
+        # Create normalisation for attribute2 if not provided
+        if auto_scale:
+            # Get percentile-based min/max
+            # valid_values = attribute2.values[~np.isnan(attribute2.values)]
+            valid_values = attribute2[~np.isnan(attribute2)]
+            robust_min = np.percentile(valid_values, 5)
+            robust_max = np.percentile(valid_values, 95)
+            attribute2_norm = Normalize(vmin=robust_min, vmax=robust_max)
+            attribute2_min = robust_min
+            attribute2_max = robust_max
+        else:
+            attribute2_norm = Normalize(vmin=attribute2_min, vmax=attribute2_max)
+
+    if attribute3 is not None:
+        # Ensure attribute3_min and attribute3_max are set if not provided
+        if attribute3_min is None:
+            attribute3_min = np.nanmin(attribute3)
+        if attribute3_max is None:
+            attribute3_max = np.nanmax(attribute3)
+        # Create normalisation for attribute3 if not provided
+        if attribute3_norm is None:
+            if auto_scale:
+                # Use robust percentile-based normalisation
+                # valid_values = attribute3.values[~np.isnan(attribute3.values)]
+                valid_values = attribute3[~np.isnan(attribute3)]
+                if len(valid_values) > 0:
+                    robust_min = np.percentile(valid_values, 2)
+                    robust_max = np.percentile(valid_values, 98)
+                    attribute3_norm = Normalize(vmin=robust_min, vmax=robust_max)
+                    attribute3_min = robust_min
+                    attribute3_max = robust_max
+                else:
+                    attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
+            else:
+                attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
+
     # Calculate attribute4 min/max if provided (for line width)
     if attribute4 is not None:
         if attribute4_min is None:
@@ -1837,8 +2107,11 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             valid_values = attribute4[~np.isnan(attribute4)]
             robust_min = np.percentile(valid_values, 5)
             robust_max = np.percentile(valid_values, 95)
+            attribute4_norm = Normalize(vmin=robust_min, vmax=robust_max)
             attribute4_min = robust_min
             attribute4_max = robust_max
+        else:
+            attribute4_norm = Normalize(vmin=attribute4_min, vmax=attribute4_max)
 
     # prepare legend arrays
     legend_contourwidths = []
@@ -1908,21 +2181,6 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
 
     print(f"Generated {len(contour_levels)} contour levels ranging from {contour_levels[0]:.6f} to {contour_levels[-1]:.6f}")
 
-    # Calculate attribute2 min/max for dash pattern
-    if attribute2_min is None:
-        attribute2_min = np.nanmin(attribute2)
-    if attribute2_max is None:
-        attribute2_max = np.nanmax(attribute2)
-
-    if auto_scale:
-        # Get percentile-based min/max
-        # valid_values = attribute2.values[~np.isnan(attribute2.values)]
-        valid_values = attribute2[~np.isnan(attribute2)]
-        robust_min = np.percentile(valid_values, 5)
-        robust_max = np.percentile(valid_values, 95)
-        attribute2_min = robust_min
-        attribute2_max = robust_max
-
     # ---------------- #
     # Plot the results #
     # ---------------- #
@@ -1937,7 +2195,7 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         try:
             img = plt.imread(parchment_file)
             dataaxis.imshow(img, extent=[lon.min(), lon.max(), lat.min(), lat.max()],
-                    aspect='auto', alpha=texture_alpha, zorder=0)
+                    aspect='auto', alpha=1.0, zorder=0)
         except FileNotFoundError as error:
             print(f"Parchment texture file {parchment_file} not found. Proceeding without it.")
             # traceback.format_exc()
@@ -2177,31 +2435,11 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
     if attribute4 is not None:
         print(f"Attribute4 range used for line widths: [{attribute4_min:.4f}, {attribute4_max:.4f}]")
 
-
+    # plot the background attribute as pcolormesh
     if attribute3 is not None:
-        # Ensure attribute3_min and attribute3_max are set if not provided
-        if attribute3_min is None:
-            attribute3_min = np.nanmin(attribute3)
-        if attribute3_max is None:
-            attribute3_max = np.nanmax(attribute3)
-        
-        # Create normalisation for attribute3 if not provided
-        if attribute3_norm is None:
-            if auto_scale:
-                # Use robust percentile-based normalisation
-                # valid_values = attribute3.values[~np.isnan(attribute3.values)]
-                valid_values = attribute3[~np.isnan(attribute3)]
-                if len(valid_values) > 0:
-                    robust_min = np.percentile(valid_values, 2)
-                    robust_max = np.percentile(valid_values, 98)
-                    attribute3_norm = Normalize(vmin=robust_min, vmax=robust_max)
-                else:
-                    attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
-            else:
-                attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
         attribute3_absmax = np.maximum(np.absolute(attribute3_min), np.absolute(attribute3_max))
         attribute3_absnorm = np.abs(attribute3) / attribute3_absmax
-        attribute3_clipabs = np.maximum(np.minimum((attribute3_absnorm - 0.1) / 0.2, 1.0), .0)
+        # attribute3_clipabs = np.maximum(np.minimum((attribute3_absnorm - 0.1) / 0.2, 1.0), .0)
 
         # Plot attribute3 as background
         cs_attr3 = dataaxis.pcolormesh(
@@ -2666,10 +2904,10 @@ def generate_all_possible_mappings(data, output_dir="visualisation_outputs"):
     print("Generating visualisations for all possible mappings...")
     
     # ==== Generate all combinations for hatch visualisations ==== #
-    #generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
+    generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
     
     # ==== Generate all combinations for stipple visualisations ==== #
-    generate_all_stipple_combinations(data, variables, output_dir)
+    # generate_all_stipple_combinations(data, variables, output_dir)
     
     # ==== Generate all combinations for flow contour visualisations ==== #
     # generate_all_flow_combinations(data, variables, output_dir)
@@ -2785,10 +3023,13 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
         # Normalize attribute1 (density controlling variable)
         attribute1_range = attribute1_max - attribute1_min
         if attribute1_range > 0:
-            if isinstance(attribute1.values, np.ndarray):
-                normalized_attribute1 = (attribute1.values - attribute1_min) / attribute1_range
-            else:
-                normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
+            # # if isinstance(attribute1.values, np.ndarray):
+            # if isinstance(attribute1, np.ndarray):
+            #     # normalized_attribute1 = (attribute1.values - attribute1_min) / attribute1_range
+            #     normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
+            # else:
+            #     normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
+            normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
         else:
             normalized_attribute1 = np.zeros_like(attribute1.values)
         
@@ -2800,7 +3041,7 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
             use_attribute5_for_color = False
         else:
             attribute5 = data[color_var]
-            attribute5 = attribute5.rename(variables[color_var])  
+            # attribute5 = attribute5.rename(variables[color_var])
             use_attribute5_for_color = True
 
             #  Build an appropriate normalisation
@@ -2819,11 +3060,14 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
                 elif color_var == "topography":  # elev_modified
                     # attribute5_cmap = plt.cm.get_cmap("BrBG_r")
                     attribute5_cmap = plt.colormaps.get_cmap("YlOrBr")
+                elif color_var == "bathymetry":  # elev_modified
+                    # attribute5_cmap = plt.cm.get_cmap("BrBG_r")
+                    attribute5_cmap = plt.colormaps.get_cmap("Greys")
                 # elif color_var == "temp":
                 #     attribute5_cmap = plt.cm.get_cmap("bwr")
                 else:                            
                     # attribute5_cmap = plt.cm.get_cmap("viridis")
-                    attribute5_cmap = plt.colormaps.get_cmap("Greys_r")
+                    attribute5_cmap = plt.colormaps.get_cmap("Greys")
         
         # Create title based on mappings
         title_parts = [
@@ -2870,8 +3114,14 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
                 output_image=output_path,
                 plot_title=plot_title,
                 attribute1_label=f"{variables[density_var]}",
+                attribute2_label="U-velocity",
+                attribute3_label="V-velocity",
+                attribute4_label=f"{variables[length_var]}" if length_var else "",
+                attribute5_label=f"{variables[color_var]}" if color_var else "",
+                attribute6_label=f"{variables[width_var]}" if width_var else "",
                 use_attribute5_for_color=use_attribute5_for_color,
-                base_density=0.08  # Adjust for better visualisation
+                base_density=0.08,  # Adjust for better visualisation
+                auto_scale = True
             )  # TODO: to be modfied by plotting title
         except Exception as e:
             print(f"Error generating {filename}: {e}")
