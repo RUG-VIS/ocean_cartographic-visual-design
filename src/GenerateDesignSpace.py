@@ -1242,10 +1242,24 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         seg for seg in all_segments
         if np.isfinite(seg[0]).all() and np.isfinite(seg[1]).all()
     ]
+    clean_segments = []
+    clean_linewidths = []
+    clean_alphas = []
+    for i in range(len(all_segments)):
+        seg = all_segments[i]
+        if np.isfinite(seg[0]).all() and np.isfinite(seg[1]).all():
+            clean_segments.append(all_segments[i])
+            clean_linewidths.append(all_linewidths[i])
+            clean_alphas.append(all_alphas[i])
+    all_segments = clean_segments
+    all_linewidths = clean_linewidths
+    all_alphas = clean_alphas
 
     # Create line collection for the hatches
-    lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, alpha=all_alphas, zorder=2)
-    dataaxis.add_collection(lc)
+    if len(all_segments) > 0:
+        lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, alpha=all_alphas, zorder=2)
+        # lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, zorder=2)
+        dataaxis.add_collection(lc)
     
     # Add tuft circles to indicate flow direction if enabled
     if toggle_tufts and tuft_centers:
@@ -1346,6 +1360,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             density_cbar_label = "Temperature (°C)"
         elif attribute1_label == "VelocityMagnitude":
             density_cbar_label = "Velocity Magnitude (m/s)"
+        elif attribute5_label == "Divergence":
+            density_cbar_label = "Divergence (1/s)"
         ax_cbar_tuft_density.set_label(density_cbar_label)
         # ax_cbar_tuft_density.xaxis.set_ticks_position('top')
         # ax_cbar_tuft_density.xaxis.set_label_position('bottom')
@@ -1417,11 +1433,12 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         for i in range(len(legend_hatchlengths)):
             lengthitem = legend_hatchlengths[i]
             lengthlabel = legend_hatchlengths_labels[i]
-            itemlabel = "{:.2f} {}".format(lengthlabel, unit_base)
-            legend_elements.append(Line2D([0], [0], color='black', linestyle=lengthitem, lw=1, label=itemlabel))
+            lengthitemlabel = "{:.2f} {}".format(lengthlabel, unit_base)
+            legend_elements.append(Line2D([0], [0], color='black', linestyle=lengthitemlabel, lw=1, label=itemlabel))
 
     # Legend / colourbar for hatch width
-    if not isinstance(all_linewidths, str):
+    # if not isinstance(all_linewidths, str):
+    if attribute6 is not None:
         unit_base = ""
         if attribute6_label == "Topography":
             # label_base = "Elevation (m)"
@@ -1441,8 +1458,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         for i in range(len(legend_hatchwidths)):  # TODO: pregenerate that field of contour width [DONE]
             widthitem = legend_hatchwidths[i]
             widthlabel = legend_hatchwidths_labels[i]
-            itemlabel = "{:.2f} {}".format(widthlabel, unit_base)
-            legend_elements.append(Line2D([0], [0], color='black', lw=widthitem, label=itemlabel))
+            widthitemlabel = "{:.2f} {}".format(widthlabel, unit_base)
+            legend_elements.append(Line2D([0], [0], color='black', lw=widthitem, label=widthitemlabel))
 
     # Finalize the in-plot legend
     if len(legend_elements) > 0:
