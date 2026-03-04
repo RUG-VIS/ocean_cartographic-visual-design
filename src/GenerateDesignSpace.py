@@ -1435,13 +1435,14 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             legend_elements.append(Line2D([0], [0], color='black', lw=widthitem, label=itemlabel))
 
     # Finalize the in-plot legend
-    dataaxis.legend(handles=legend_elements, loc='upper right')  # , bbox_to_anchor=(0.5, -0.05),
+    if len(legend_elements) > 0:
+        dataaxis.legend(handles=legend_elements, loc='upper right')
     # Add scale bar
     add_scale_bar(dataaxis, lon_range, lat_range)
     # plt.tight_layout()
     
     # Save the figure
-    plt.savefig(output_image, dpi=plot_dpi)
+    plt.savefig(output_image, dpi=plot_dpi, bbox_inches='tight')
     print(f"Figure saved to {output_image}")
     
     # Optionally show the figure
@@ -3089,7 +3090,7 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
             title_parts.append(f"{variables[color_var]} (Background Color)")
             
         plot_title = f"Hatch: {', '.join(title_parts)}"
-        plot_title = ""
+        # plot_title = ""
         
         # Call  hatch function with the configured parameters
         try:
