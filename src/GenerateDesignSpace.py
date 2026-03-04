@@ -1420,21 +1420,21 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # Legend / colourbar for hatch length
     if attribute4 is not None:
         unit_base = ""
-        if attribute6_label == "Topography":
+        if attribute4_label == "Topography":
             unit_base = "m"
-        elif attribute6_label == "Bathymetry":
+        elif attribute4_label == "Bathymetry":
             unit_base = "m"
-        elif attribute6_label == "Temperature":
+        elif attribute4_label == "Temperature":
             unit_base = "°C"
-        elif attribute6_label == "VelocityMagnitude":
+        elif attribute4_label == "VelocityMagnitude":
             unit_base = "m/s"
-        elif attribute6_label == "Divergence":
+        elif attribute4_label == "Divergence":
             unit_base = "1/s"
         for i in range(len(legend_hatchlengths)):
             lengthitem = legend_hatchlengths[i]
             lengthlabel = legend_hatchlengths_labels[i]
             lengthitemlabel = "{:.2f} {}".format(lengthlabel, unit_base)
-            legend_elements.append(Line2D([0], [0], color='black', linestyle=lengthitemlabel, lw=1, label=itemlabel))
+            legend_elements.append(Line2D([0], [0], color='black', linestyle=lengthitem, lw=1, label=lengthitemlabel))
 
     # Legend / colourbar for hatch width
     # if not isinstance(all_linewidths, str):
