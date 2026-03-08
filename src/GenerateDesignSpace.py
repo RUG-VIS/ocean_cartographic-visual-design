@@ -45,7 +45,8 @@ currents_file = "metoffice_foam1_amm7_NWS_CUR_b20240103_dm20240101.nc"  # input_
 # input_netcdf3 = "ThesisTemps.nc"   # Path to input  temperature data
 temperature_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis2D-2024/temperature/"
 temperature_file = "metoffice_foam1_amm7_NWS_TEM_b20240103_dm20240101.nc"  # input_netcdf3
-output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowhatches"
+output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_selection"
+# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowhatches"
 # output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_stipples"
 # output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
 
@@ -1232,6 +1233,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     if attribute5 is not None and use_attribute5_for_color:
         attribute5_absmax = np.maximum(np.absolute(attribute5_min), np.absolute(attribute5_max))
         attribute5_absnorm = np.abs(attribute5) / attribute5_absmax
+        attribute5_absnorm = np.maximum(.0, np.minimum(1.0, attribute5_absnorm))
         # attribute5_clipabs = np.maximum(np.minimum((attribute3_absnorm - 0.1) / 0.2, 1.0), .0)
         # Use attribute5 for background coloration
         cs_attr5 = dataaxis.pcolormesh(
@@ -1263,13 +1265,13 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             clean_alphas.append(all_alphas[i])
     all_segments = clean_segments
     all_linewidths = clean_linewidths
-    all_alphas = clean_alphas
+    all_alphas = np.ones_like(clean_alphas)
 
     # Create line collection for the hatches
     if len(all_segments) > 0:
         lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, alpha=all_alphas, zorder=2)
         # lc = LineCollection(all_segments, linewidths=all_linewidths, colors=all_colors, zorder=2)
-        dataaxis.add_collection(lc)
+        dataaxis.add_collection(lc, autolim=False)
     
     # Add tuft circles to indicate flow direction if enabled
     if toggle_tufts and tuft_centers:
@@ -2969,7 +2971,8 @@ def generate_all_possible_mappings(data, output_dir="visualisation_outputs"):
     print("Generating visualisations for all possible mappings...")
     
     # ==== Generate all combinations for hatch visualisations ==== #
-    generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
+    # generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
+    generate_survey_hatch_combinations(data, variables, flow_direction, output_dir)
     
     # ==== Generate all combinations for stipple visualisations ==== #
     # generate_all_stipple_combinations(data, variables, output_dir)
@@ -3157,6 +3160,221 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
         if skip_title_plotting:
             plot_title = ""
         
+        # Call  hatch function with the configured parameters
+        try:
+            hatch(
+                attribute1=attribute1,
+                attribute1_max=attribute1_max,
+                attribute1_min=attribute1_min,
+                attribute2=attribute2,
+                attribute3=attribute3,
+                attribute4=attribute4,  # Can be None for uniform length
+                attribute5=attribute5 if color_var else None,
+                attribute6=attribute6,  # Can be None for uniform width
+                signed_dist=data['signed_dist'],
+                lon=data['lon'],
+                lat=data['lat'],
+                water_mask=data['water_mask'],
+                elev=data['elevation'],
+                topography=data["topography"],  # elev_modified
+                normalized_attribute1=normalized_attribute1,
+                attribute5_norm=attribute5_norm,
+                attribute5_cmap=attribute5_cmap,
+                output_image=output_path,
+                plot_title=plot_title,
+                attribute1_label=f"{variables[density_var]}",
+                attribute2_label="U-velocity",
+                attribute3_label="V-velocity",
+                attribute4_label=f"{variables[length_var]}" if length_var else "",
+                attribute5_label=f"{variables[color_var]}" if color_var else "",
+                attribute6_label=f"{variables[width_var]}" if width_var else "",
+                use_attribute5_for_color=use_attribute5_for_color,
+                base_density=0.08,  # Adjust for better visualisation
+                auto_scale = True
+            )  # TODO: to be modfied by plotting title
+        except Exception as e:
+            print(f"Error generating {filename}: {e}")
+            # traceback.format_exc()
+            logger.exception(e)
+
+def generate_survey_hatch_combinations(data, variables, flow_direction, output_dir):
+    """
+    Generate all possible combinations for hatch visualisations.
+
+    For hatches, we need:
+    - attribute1: density
+    - attribute2/3: direction (fixed to u/v)
+    - attribute4: line length (variable or uniform)
+    - attribute5: background color (optional)
+    - attribute6: line width (variable or uniform)
+    """
+    print("Generating all hatch combinations...")
+    variables['constant'] = 'Uniform'
+    constant_var = 'constant'
+    data['constant'] = np.ones_like(data['elevation']) * 0.9
+
+    jitter_scale = 0.0003  # adjust based on  coordinate system
+    data['constant'] = data['constant'] + np.random.normal(0, jitter_scale, data['constant'].shape)
+
+    # Create a list of all combinations
+    # For density (attribute1)
+    density_vars = list(variables.keys())
+
+    # For line length (attribute4)
+    length_vars = list(variables.keys()) + [None]  # None means uniform length
+
+    # For color (attribute5)
+    color_vars = list(variables.keys()) + [None]  # None means no background colour
+
+    # For line width (attribute6)
+    width_vars = list(variables.keys()) + [None]  # None means uniform width
+
+    # Generate all combinations
+    # combinations = list(itertools.product(density_vars, length_vars, color_vars, width_vars))
+    valid_combinations = []
+    valid_combinations.append(('constant', None, None, None))
+    valid_combinations.append(('velmag', None, None, None))
+    valid_combinations.append(('velmag', None, 'temp', None))
+    valid_combinations.append(('velmag', 'flow_divergence', 'temp', None))
+    valid_combinations.append(('velmag', 'flow_divergence', 'temp', 'bathymetry'))
+
+    # -------------------------------------------------- #
+    # Generate visualisations for each valid combination #
+    # -------------------------------------------------- #
+    for i, combo in enumerate(valid_combinations):
+        density_var, length_var, color_var, width_var = combo  # Unpack all four variables
+
+        # Skip some combinations to make the total number manageable
+        if i % 10 != 0 and len(valid_combinations) > 50:
+            continue
+
+        # Create descriptive filename components
+        density_part = f"{variables[density_var]}-Density"
+        orient_part = "VelocityDirection-Orientation"
+
+        if length_var is None:
+            length_part = "Uniform-Length"
+        else:
+            length_part = f"{variables[length_var]}-Length"
+
+        if width_var is None:
+            width_part = "Uniform-Width"
+        else:
+            width_part = f"{variables[width_var]}-Width"
+
+        if color_var is None:
+            color_part = "No-BgColor"
+        else:
+            color_part = f"_{variables[color_var]}-BgColor"
+
+        # Combine filename components
+        filename = f"Hatch_{density_part}_{orient_part}_{length_part}_{width_part}{color_part}.png"
+
+        output_path = os.path.join(output_dir, filename)
+
+        print(f"Generating hatch visualisation {i+1}/{len(valid_combinations)}: {filename}")
+
+        # Get the appropriate variables
+        attribute1 = data[density_var]
+        attribute1_min = np.nanmin(attribute1)
+        attribute1_max = np.nanmax(attribute1)
+        attribute2 = flow_direction['u']
+        attribute3 = flow_direction['v']
+
+        # Set up attribute4 (length)
+        if length_var is None:
+        # For UniformLength, create a dummy array instead of using None
+            uniform_length_value = 0.5  # Medium value
+            attribute4 = np.ones(attribute1.shape, dtype=np.float32) * uniform_length_value
+            # attribute4 = xr.DataArray(
+            #     data=np.ones_like(attribute1.values) * uniform_length_value,
+            #     dims=attribute1.dims,
+            #     coords=attribute1.coords,
+            #     name="uniform_length"
+            # )
+            print(f"Created uniform length attribute4 with shape {attribute4.shape}")
+        else:
+            attribute4 = data[length_var]
+
+        # Set up attribute5 (color) and related parameters
+        attribute5 = data[color_var] if color_var else None
+        use_attribute5_for_color = (color_var is not None)
+
+        # Set up attribute6 (width)
+        attribute6 = data[width_var] if width_var else None
+
+        # Normalize attribute1 (density controlling variable)
+        attribute1_range = attribute1_max - attribute1_min
+        if attribute1_range > 0:
+            # # if isinstance(attribute1.values, np.ndarray):
+            # if isinstance(attribute1, np.ndarray):
+            #     # normalized_attribute1 = (attribute1.values - attribute1_min) / attribute1_range
+            #     normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
+            # else:
+            #     normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
+            normalized_attribute1 = (attribute1 - attribute1_min) / attribute1_range
+        else:
+            normalized_attribute1 = np.zeros_like(attribute1) # .values
+
+        # Determine appropriate colormap and normalisation for attribute5
+        if color_var is None:
+            attribute5 = None
+            attribute5_cmap = None
+            attribute5_norm = None
+            use_attribute5_for_color = False
+        else:
+            attribute5 = data[color_var]
+            # attribute5 = attribute5.rename(variables[color_var])
+            use_attribute5_for_color = True
+
+            #  Build an appropriate normalisation
+            if color_var in ["flow_divergence", "temp"]:
+                # Diverging: centre on zero
+                vmax = np.nanpercentile(np.abs(attribute5), 95)
+                attribute5_norm = TwoSlopeNorm(vmin=-vmax, vcenter=0, vmax=vmax)
+                # attribute5_cmap = plt.cm.get_cmap("RdBu_r")
+                attribute5_cmap = plt.colormaps.get_cmap("bwr")
+            else:
+                # Sequential: simple linear 5-th→95-th percentile stretch
+                vmin, vmax = np.nanpercentile(attribute5, (5, 95))
+                attribute5_norm = plt.Normalize(vmin=vmin, vmax=vmax)
+                if color_var == "velmag":
+                    attribute5_cmap = plt.colormaps.get_cmap("PuBu")
+                elif color_var == "topography":  # elev_modified
+                    # attribute5_cmap = plt.cm.get_cmap("BrBG_r")
+                    attribute5_cmap = plt.colormaps.get_cmap("YlOrBr")
+                elif color_var == "bathymetry":  # elev_modified
+                    # attribute5_cmap = plt.cm.get_cmap("BrBG_r")
+                    attribute5_cmap = plt.colormaps.get_cmap("Greys")
+                # elif color_var == "temp":
+                #     attribute5_cmap = plt.cm.get_cmap("bwr")
+                else:
+                    # attribute5_cmap = plt.cm.get_cmap("viridis")
+                    attribute5_cmap = plt.colormaps.get_cmap("Greys")
+
+        # Create title based on mappings
+        title_parts = [
+            f"{variables[density_var]} (Stroke Density)",
+            "Veloctity Orientation (Stroke Orientation)"
+        ]
+
+        if length_var is None:
+            title_parts.append("Uniform Stroke Length")
+        else:
+            title_parts.append(f"{variables[length_var]} (Stroke Length)")
+
+        if width_var is None:
+            title_parts.append("Uniform Stroke Width")
+        else:
+            title_parts.append(f"{variables[width_var]} (Stroke Width)")
+
+        if color_var:
+            title_parts.append(f"{variables[color_var]} (Background Color)")
+
+        plot_title = f"Hatch: {', '.join(title_parts)}"
+        if skip_title_plotting:
+            plot_title = ""
+
         # Call  hatch function with the configured parameters
         try:
             hatch(
