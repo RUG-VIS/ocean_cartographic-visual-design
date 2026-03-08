@@ -46,8 +46,8 @@ currents_file = "metoffice_foam1_amm7_NWS_CUR_b20240103_dm20240101.nc"  # input_
 temperature_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis2D-2024/temperature/"
 temperature_file = "metoffice_foam1_amm7_NWS_TEM_b20240103_dm20240101.nc"  # input_netcdf3
 output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowhatches"
-# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
 # output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_stipples"
+# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
 
 def round_to_nice(x):
     magnitude = 10 ** np.floor(np.log10(x))
@@ -685,6 +685,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         if len(valid_values) > 0:
             robust_min = np.percentile(valid_values, 2)
             robust_max = np.percentile(valid_values, 98)
+            attribute1_min = robust_min
+            attribute1_max = robust_max
             attribute1_norm = Normalize(vmin=robust_min, vmax=robust_max)
         else:
             attribute1_norm = Normalize(vmin=attribute1_min, vmax=attribute1_max)
@@ -718,9 +720,9 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             if len(valid_values) > 0:
                 robust_min = np.percentile(valid_values, 2)
                 robust_max = np.percentile(valid_values, 98)
-                attribute2_norm = Normalize(vmin=robust_min, vmax=robust_max)
                 attribute2_min = robust_min
                 attribute2_max = robust_max
+                attribute2_norm = Normalize(vmin=robust_min, vmax=robust_max)
             else:
                 attribute2_norm = Normalize(vmin=attribute2_min, vmax=attribute2_max)
         else:
@@ -742,6 +744,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             if len(valid_values) > 0:
                 robust_min = np.percentile(valid_values, 2)
                 robust_max = np.percentile(valid_values, 98)
+                attribute3_min = robust_min
+                attribute3_max = robust_max
                 attribute3_norm = Normalize(vmin=robust_min, vmax=robust_max)
             else:
                 attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
@@ -764,6 +768,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             if len(valid_values) > 0:
                 robust_min = np.percentile(valid_values, 2)
                 robust_max = np.percentile(valid_values, 98)
+                attribute4_min = robust_min
+                attribute4_max = robust_max
                 attribute4_norm = Normalize(vmin=robust_min, vmax=robust_max)
             else:
                 attribute4_norm = Normalize(vmin=attribute4_min, vmax=attribute4_max)
@@ -786,6 +792,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             if len(valid_values) > 0:
                 robust_min = np.percentile(valid_values, 2)
                 robust_max = np.percentile(valid_values, 98)
+                attribute5_min = robust_min
+                attribute5_max = robust_max
                 attribute5_norm = Normalize(vmin=robust_min, vmax=robust_max)
             else:
                 attribute5_norm = Normalize(vmin=attribute5_min, vmax=attribute5_max)
@@ -808,6 +816,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             if len(valid_values) > 0:
                 robust_min = np.percentile(valid_values, 2)
                 robust_max = np.percentile(valid_values, 98)
+                attribute6_min = robust_min
+                attribute6_max = robust_max
                 attribute6_norm = Normalize(vmin=robust_min, vmax=robust_max)
             else:
                 attribute6_norm = Normalize(vmin=attribute6_min, vmax=attribute6_max)
@@ -1593,7 +1603,19 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
     
     # Create normalisation for attribute1 if not provided
     if attribute1_norm is None:
-        attribute1_norm = plt.Normalize(vmin=attribute1_min, vmax=attribute1_max)
+        if auto_scale:
+            # Use robust percentile-based normalisation
+            valid_values = attribute1[~np.isnan(attribute1)]
+            if len(valid_values) > 0:
+                robust_min = np.percentile(valid_values, 2)
+                robust_max = np.percentile(valid_values, 98)
+                attribute1_min = robust_min
+                attribute1_max = robust_max
+                attribute1_norm = plt.Normalize(vmin=robust_min, vmax=robust_max)
+            else:
+                attribute1_norm = plt.Normalize(vmin=attribute1_min, vmax=attribute1_max)
+        else:
+            attribute1_norm = plt.Normalize(vmin=attribute1_min, vmax=attribute1_max)
     
     # For attribute2 (density) use attribute1 if not provided; abs to avoid negative values
     density_attribute = attribute2 if attribute2 is not None else attribute1
@@ -1608,8 +1630,20 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
             attribute2_min = np.nanmin(attribute2)
         if attribute2_max is None:
             attribute2_max = np.nanmax(attribute2)
-        if attribute2_norm is None:
-            attribute2_norm = plt.Normalize(vmin=attribute2_min, vmax=attribute2_max)
+        if attribute3_norm is None:
+            if auto_scale:
+                # Use robust percentile-based normalisation
+                valid_values = attribute2[~np.isnan(attribute2)]
+                if len(valid_values) > 0:
+                    robust_min = np.percentile(valid_values, 2)
+                    robust_max = np.percentile(valid_values, 98)
+                    attribute2_min = robust_min
+                    attribute2_max = robust_max
+                    attribute2_norm = plt.Normalize(vmin=robust_min, vmax=robust_max)
+                else:
+                    attribute2_norm = plt.Normalize(vmin=attribute2_min, vmax=attribute2_max)
+            else:
+                attribute2_norm = plt.Normalize(vmin=attribute2_min, vmax=attribute2_max)
     else:
         attribute2_min = attribute1_min
         attribute2_max = attribute1_max
@@ -1629,6 +1663,8 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
                 if len(valid_values) > 0:
                     robust_min = np.percentile(valid_values, 2)
                     robust_max = np.percentile(valid_values, 98)
+                    attribute3_min = robust_min
+                    attribute3_max = robust_max
                     attribute3_norm = Normalize(vmin=robust_min, vmax=robust_max)
                 else:
                     attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
@@ -2094,9 +2130,9 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             valid_values = attribute2[~np.isnan(attribute2)]
             robust_min = np.percentile(valid_values, 5)
             robust_max = np.percentile(valid_values, 95)
-            attribute2_norm = Normalize(vmin=robust_min, vmax=robust_max)
             attribute2_min = robust_min
             attribute2_max = robust_max
+            attribute2_norm = Normalize(vmin=robust_min, vmax=robust_max)
         else:
             attribute2_norm = Normalize(vmin=attribute2_min, vmax=attribute2_max)
 
@@ -2115,9 +2151,9 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
                 if len(valid_values) > 0:
                     robust_min = np.percentile(valid_values, 2)
                     robust_max = np.percentile(valid_values, 98)
-                    attribute3_norm = Normalize(vmin=robust_min, vmax=robust_max)
                     attribute3_min = robust_min
                     attribute3_max = robust_max
+                    attribute3_norm = Normalize(vmin=robust_min, vmax=robust_max)
                 else:
                     attribute3_norm = Normalize(vmin=attribute3_min, vmax=attribute3_max)
             else:
@@ -2135,9 +2171,9 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
             valid_values = attribute4[~np.isnan(attribute4)]
             robust_min = np.percentile(valid_values, 5)
             robust_max = np.percentile(valid_values, 95)
-            attribute4_norm = Normalize(vmin=robust_min, vmax=robust_max)
             attribute4_min = robust_min
             attribute4_max = robust_max
+            attribute4_norm = Normalize(vmin=robust_min, vmax=robust_max)
         else:
             attribute4_norm = Normalize(vmin=attribute4_min, vmax=attribute4_max)
 
@@ -2804,6 +2840,7 @@ def load_sample_data():
     
     # Compute divergence
     flow_divergence = dudx + dvdy
+    flow_divergence = np.sign(flow_divergence)  # only use the sign, not the absolute value of divergence
     
     # Create divergence dataarray
     # divergence = xr.DataArray(
