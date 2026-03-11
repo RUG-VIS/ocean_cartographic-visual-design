@@ -29,7 +29,7 @@ plt.rcParams.update({
     'figure.facecolor': 'white',
     'axes.facecolor': 'white',
 })
-plot_dpi = 300
+plot_dpi = 150
 skip_title_plotting = True
 
 # -----------------------------------------------------------------------------
@@ -591,8 +591,6 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
         Title for the plot, default is "Flow as Handdrawn Hatches with Direction Markers"
     log_attribute1_scale : bool, optional
         Whether to use logarithmic scale for attribute1, default is True
-    attribute1_label : str, optional
-        Label for attribute1 on the colorbar, default is "Temperature (°C)"
     use_attribute5_for_color : bool, optional
         Whether to use attribute5 for hatch color, default is False
     base_density : float, optional
@@ -1349,40 +1347,48 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
 
     # Legend / colourbar for density
     ax_cbar_tuft_density = datafig.add_axes([0.06, 0.1, 0.02, 0.8])
-    img = plt.imread("densitybar_vertical.png")
-    ax_cbar_tuft_density.imshow(img, aspect='auto')
-    ax_cbar_tuft_density.set_xlim(0, 1)
-    ax_cbar_tuft_density.set_ylim(0, 1)
+    img = plt.imread("densitybar_vertical2.png")
+    # imgX = np.linspace(.0, 1.0, img.shape[1], endpoint=True)
+    # imgY = np.linspace(attribute1_min, attribute1_max, img.shape[0], endpoint=True)
+    # ax_cbar_tuft_density.pcolormesh(img, aspect='auto')  # , aspect='auto'
+    ax_cbar_tuft_density.imshow(img, extent=[.0, 1.0, attribute1_min, attribute1_max], interpolation='nearest', origin='lower', aspect='auto')  # , aspect='auto'
+    # ax_cbar_tuft_density.set_xlim(0, 1)
+    # ax_cbar_tuft_density.set_ylim(attribute1_min, attribute1_max)
     # ax_cbar_tuft_density.tight_layout()
     ax_cbar_tuft_density.xaxis.set_major_locator(ticker.NullLocator())
-    ax_cbar_tuft_density.yaxis.set_major_locator(ticker.MaxNLocator(5))
-    if hasattr(attribute5, 'name'):
-        ax_cbar_tuft_density.set_label(f'{attribute1.name}')
+    ax_cbar_tuft_density.yaxis.set_major_locator(ticker.MaxNLocator(6))
+    ax_cbar_tuft_density.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
+    # ax_cbar_tuft_density.set_yticks(tuft_density_bounds)
+    density_cbar_label = ""
+    if hasattr(attribute1, 'name'):
+        density_cbar_label = f'{attribute1.name}'
     else:
-        density_cbar_label = ""
         # colorbar units
-        # if background_label == "Depth":
         if attribute1_label == "Topography":
             density_cbar_label = "Elevation (m)"
         elif attribute1_label == "Bathymetry":
-            density_cbar_label += "Depth (m)"
+            density_cbar_label = "Depth (m)"
         elif attribute1_label == "Temperature":
             density_cbar_label = "Temperature (°C)"
         elif attribute1_label == "VelocityMagnitude":
             density_cbar_label = "Velocity Magnitude (m/s)"
-        elif attribute5_label == "Divergence":
+        elif attribute1_label == "Divergence":
             density_cbar_label = "Divergence (1/s)"
-        ax_cbar_tuft_density.set_label(density_cbar_label)
+    if len(density_cbar_label) > 0:
+        ax_cbar_tuft_density.set_ylabel(density_cbar_label)
         # ax_cbar_tuft_density.xaxis.set_ticks_position('top')
         # ax_cbar_tuft_density.xaxis.set_label_position('bottom')
         ax_cbar_tuft_density.yaxis.set_ticks_position('right')
         ax_cbar_tuft_density.yaxis.set_label_position('left')
+    else:
+        ax_cbar_tuft_density.xaxis.set_major_locator(ticker.NullLocator())
+        ax_cbar_tuft_density.yaxis.set_major_locator(ticker.NullLocator())
 
     # Legend / colourbar for the background colourmap
     ax_cbar_bg_colourmap = datafig.add_axes([0.92, 0.1, 0.02, 0.8])
     ax_cbar_bg_colourmap.set_facecolor("white")
-    ax_cbar_bg_colourmap.yaxis.set_ticks_position('right')
-    ax_cbar_bg_colourmap.yaxis.set_label_position('left')
+    # ax_cbar_bg_colourmap.yaxis.set_ticks_position('right')
+    # ax_cbar_bg_colourmap.yaxis.set_label_position('left')
     if use_attribute5_for_color and attribute5 is not None:
         cmap_bar = None
         # if attribute5_norm is not None:
@@ -1406,7 +1412,7 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             if attribute5_label == "Topography":
                 cbar_label = "Elevation (m)"
             elif attribute5_label == "Bathymetry":
-                cbar_label += "Depth (m)"
+                cbar_label = "Depth (m)"
             elif attribute5_label == "Temperature":
                 cbar_label = "Temperature (°C)"
             elif attribute5_label == "VelocityMagnitude":
@@ -1418,6 +1424,9 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
             # ax_cbar_bg_colourmap.xaxis.set_label_position('bottom')
             ax_cbar_bg_colourmap.yaxis.set_ticks_position('left')
             ax_cbar_bg_colourmap.yaxis.set_label_position('right')
+    else:
+        ax_cbar_bg_colourmap.xaxis.set_major_locator(ticker.NullLocator())
+        ax_cbar_bg_colourmap.yaxis.set_major_locator(ticker.NullLocator())
 
     legend_elements = []
     # Legend / colourbar for line colour
@@ -1479,7 +1488,8 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
     # plt.tight_layout()
     
     # Save the figure
-    plt.savefig(output_image, dpi=plot_dpi, bbox_inches='tight')
+    # plt.savefig(output_image, dpi=plot_dpi, bbox_inches='tight')
+    datafig.savefig(output_image, dpi=plot_dpi, bbox_inches='tight')
     print(f"Figure saved to {output_image}")
     
     # Optionally show the figure
@@ -3222,18 +3232,18 @@ def generate_survey_hatch_combinations(data, variables, flow_direction, output_d
     jitter_scale = 0.0003  # adjust based on  coordinate system
     data['constant'] = data['constant'] + np.random.normal(0, jitter_scale, data['constant'].shape)
 
-    # Create a list of all combinations
-    # For density (attribute1)
-    density_vars = list(variables.keys())
-
-    # For line length (attribute4)
-    length_vars = list(variables.keys()) + [None]  # None means uniform length
-
-    # For color (attribute5)
-    color_vars = list(variables.keys()) + [None]  # None means no background colour
-
-    # For line width (attribute6)
-    width_vars = list(variables.keys()) + [None]  # None means uniform width
+    # # Create a list of all combinations
+    # # For density (attribute1)
+    # density_vars = list(variables.keys())
+    #
+    # # For line length (attribute4)
+    # length_vars = list(variables.keys()) + [None]  # None means uniform length
+    #
+    # # For color (attribute5)
+    # color_vars = list(variables.keys()) + [None]  # None means no background colour
+    #
+    # # For line width (attribute6)
+    # width_vars = list(variables.keys()) + [None]  # None means uniform width
 
     # Generate all combinations
     # combinations = list(itertools.product(density_vars, length_vars, color_vars, width_vars))
