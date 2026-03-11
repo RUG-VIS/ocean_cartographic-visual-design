@@ -36,17 +36,18 @@ skip_title_plotting = True
 # General Parameters
 # -----------------------------------------------------------------------------
 parchment_file = "parchment_v5.png"  # "parchment_v1.jpg"
-bathytopograhy_dir = "large-area-files"
+bathytopograhy_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/"
 bathytopograhy_file = "gebco_2025_n59.03_s57.65_w-7.65_e-6.05.nc"   # Path to input elevation data; input_netcdf
 # input_netcdf2 = "metoffice_foam1_amm7_NWS_SSC_hi20220101.nc"   # Path to input flow data
-currents_dir = "large-area-files"
+currents_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis2D-2024/currents/"
 currents_file = "metoffice_foam1_amm7_NWS_CUR_b20240103_dm20240101.nc"  # input_netcdf2
 # input_netcdf3 = "ThesisTemps.nc"   # Path to input  temperature data
-temperature_dir = "large-area-files"
+temperature_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis2D-2024/temperature/"
 temperature_file = "metoffice_foam1_amm7_NWS_TEM_b20240103_dm20240101.nc"  # input_netcdf3
-output_dir = "surveytest"  # Directory to save output images
-# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
+output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_selection"
+# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowhatches"
 # output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_stipples"
+# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
 
 def round_to_nice(x):
     magnitude = 10 ** np.floor(np.log10(x))
@@ -1218,7 +1219,6 @@ def hatch(attribute1, attribute1_max=None, attribute1_min=None, attribute2=None,
                         aspect='auto', alpha=1.0, zorder=0)
     except FileNotFoundError as error:
         print("Parchment texture file not found. Proceeding without it.")
-        traceback.format_exc()
         logger.exception(error)
     
     # variables for colorbar control
@@ -1716,7 +1716,6 @@ def stipple(lon, lat, attribute1, attribute2=None, attribute3=None, signed_dist=
                 aspect='auto', alpha=1.0, zorder=0)
     except FileNotFoundError as error:
         print("Parchment texture file not found. Proceeding without it.")
-        traceback.format_exc()
         logger.exception(error)
 
     if attribute3 is not None:
@@ -2262,7 +2261,6 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
                     aspect='auto', alpha=1.0, zorder=0)
         except FileNotFoundError as error:
             print(f"Parchment texture file {parchment_file} not found. Proceeding without it.")
-            traceback.format_exc()
             logger.exception(error)
 
     # Generate contours based on attribute1
@@ -2280,7 +2278,6 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
         print(f"Error generating contours: {e}")
         print(f"Contour levels: {contour_levels}")
         print(f"Data shape: {attribute1.shape}, range: [{min_attr1:.6f}, {max_attr1:.6f}]")
-        traceback.format_exc()
         logger.exception(e)
         return None
     
@@ -2443,7 +2440,6 @@ def flow(attribute1, lon, lat, attribute2, attribute3=None, attribute4=None, sig
                             if not np.isnan(val):
                                 attr4_vals.append(val)
                         except:
-                            traceback.format_exc()
                             pass
                     
                     # Calculate linewidth based on attribute4
@@ -2740,10 +2736,12 @@ def load_sample_data():
     # u = np.squeeze(ds2["uo"].data[0])
     u = np.squeeze(ds2["uo"].data)[0]
     u_attrs = ds2["uo"].attrs
-    fill_value = u_attrs.get("_FillValue", -32768)  # fallback to -32768 if not explicitly set
-    u = np.where(u == fill_value, np.nan, u).astype(np.float32)  # replace with nan before scaling
     # print("u-attrs: {}".format(u_attrs))
-    #print(f"uvel after loading: [{u.min():.4f}, {u.max():.4f}]")
+    # print(f"uvel after loading: [{u.min():.4f}, {u.max():.4f}]")
+    if "missing_value" in u_attrs.keys():
+        fill_value = u_attrs["missing_value"]
+        u = np.where(u == fill_value, np.nan, u).astype(np.float32)
+        print("U has a defined fill-/missing value of {}. Reseeting fill-values to nan ...".format(fill_value))
     if "scale_factor" in u_attrs.keys():
         scalefactor = u_attrs["scale_factor"]
         print("U has a scale-factor of {}. Rescaling values ...".format(scalefactor))
@@ -2757,9 +2755,12 @@ def load_sample_data():
     # print(u.shape)
     v = np.squeeze(ds2["vo"].data)[0]
     v_attrs = ds2["vo"].attrs
-    fill_value = v_attrs.get("_FillValue", -32768)  # fallback to -32768 if not explicitly set
-    v = np.where(v == fill_value, np.nan, v).astype(np.float32)  # replace with nan before scaling
     # print("v-attrs: {}".format(v_attrs))
+    # print(f"vvel after loading: [{v.min():.4f}, {v.max():.4f}]")
+    if "missing_value" in v_attrs.keys():
+        fill_value = v_attrs["missing_value"]
+        v = np.where(v == fill_value, np.nan, v).astype(np.float32)
+        print("V has a defined fill-/missing value of {}. Reseeting fill-values to nan ...".format(fill_value))
     if "scale_factor" in v_attrs.keys():
         scalefactor = v_attrs["scale_factor"]
         print("V has a scale-factor of {}. Rescaling values ...".format(scalefactor))
@@ -2773,8 +2774,8 @@ def load_sample_data():
     in_lat = ds2["latitude"].data
     in_lon = ds2["longitude"].data
     # print("in_lat {}; in_lon {}".format(in_lat.shape, in_lon.shape))
-    print(f"uvel after scaling: [{u.min():.4f}, {u.max():.4f}]")
-    print(f"vvel after scaling: [{v.min():.4f}, {v.max():.4f}]")
+    # print(f"uvel after scaling: [{u.min():.4f}, {u.max():.4f}]")
+    # print(f"vvel after scaling: [{v.min():.4f}, {v.max():.4f}]")
 
     # Load dataset for temperature data
     ds3 = xr.open_dataset(os.path.join(temperature_dir, temperature_file))
@@ -2815,11 +2816,10 @@ def load_sample_data():
     u = u[:min_size, :min_size]
     v = v[:min_size, :min_size]
     temp = temp[:min_size, :min_size]
-    
-    #make v and u zero on land
-    u = np.where(water_mask, u, .0)
-    v = np.where(water_mask, v, .0)
-    temp = np.where(water_mask, temp, .0)
+
+    u = np.where(water_mask, u, .0)  # u.where(water_mask)
+    v = np.where(water_mask, v, .0)  # v.where(water_mask)
+    temp = np.where(water_mask, temp, .0)  # temp.where(water_mask)
 
     # Compute the magnitude of the flow field
     velmag = u**2 + v**2
@@ -2827,6 +2827,7 @@ def load_sample_data():
     velmag_invalid = np.isclose(velmag, .0) & np.isclose(velmag, -.0)
     velmag_min = np.finfo(velmag.dtype).eps if velmag_invalid.all() else np.nanmin(velmag[~velmag_invalid])
     velmag[velmag_invalid] = velmag_min
+
 
     # Calculate flow divergence
     lon_spacing = float(np.abs(lon[1] - lon[0]))
@@ -2847,7 +2848,9 @@ def load_sample_data():
     
     # Compute divergence
     flow_divergence = dudx + dvdy
-    flow_divergence = np.maximum(-1.0, np.minimum(1.0, flow_divergence))    
+    # flow_divergence = np.sign(flow_divergence)  # only use the sign, not the absolute value of divergence
+    flow_divergence = np.maximum(-1.0, np.minimum(1.0, flow_divergence)) 
+    
     # Create divergence dataarray
     # divergence = xr.DataArray(
     #     data=flow_divergence,
@@ -2857,7 +2860,7 @@ def load_sample_data():
     
     # Mask out non-water areas in the divergence field
     # divergence = divergence.where(water_mask)
-    flow_divergence = np.where(water_mask, flow_divergence, np.nan)
+    flow_divergence = np.where(water_mask, flow_divergence, np.nan)  # np.NaN
     
     # Replace NaNs and handle infinite values
     flow_divergence = np.nan_to_num(flow_divergence, nan=0, posinf=0, neginf=0)
@@ -2975,14 +2978,14 @@ def generate_all_possible_mappings(data, output_dir="visualisation_outputs"):
     print("Generating visualisations for all possible mappings...")
     
     # ==== Generate all combinations for hatch visualisations ==== #
-    #generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
-    #generate_survey_hatch_combinations(data, variables, flow_direction, output_dir)
+    # generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
+    generate_survey_hatch_combinations(data, variables, flow_direction, output_dir)
     
     # ==== Generate all combinations for stipple visualisations ==== #
-    generate_all_stipple_combinations(data, variables, output_dir)
+    # generate_all_stipple_combinations(data, variables, output_dir)
     
     # ==== Generate all combinations for flow contour visualisations ==== #
-    generate_all_flow_combinations(data, variables, output_dir)
+    # generate_all_flow_combinations(data, variables, output_dir)
     
     print(f"All possible mappings generated and saved to {output_dir}")
 
@@ -3198,7 +3201,6 @@ def generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
             )  # TODO: to be modfied by plotting title
         except Exception as e:
             print(f"Error generating {filename}: {e}")
-            traceback.format_exc()
             logger.exception(e)
 
 def generate_survey_hatch_combinations(data, variables, flow_direction, output_dir):
@@ -3237,10 +3239,15 @@ def generate_survey_hatch_combinations(data, variables, flow_direction, output_d
     # combinations = list(itertools.product(density_vars, length_vars, color_vars, width_vars))
     valid_combinations = []
     valid_combinations.append(('constant', None, None, None))
-    valid_combinations.append(('velmag', None, None, None))
-    valid_combinations.append(('velmag', None, 'temp', None))
-    valid_combinations.append(('velmag', 'flow_divergence', 'temp', None))
-    valid_combinations.append(('velmag', 'flow_divergence', 'temp', 'bathymetry'))
+    # valid_combinations.append(('velmag', None, None, None))
+    # valid_combinations.append(('velmag', None, 'temp', None))
+    # valid_combinations.append(('velmag', 'flow_divergence', 'temp', None))
+    # valid_combinations.append(('velmag', 'flow_divergence', 'temp', 'bathymetry'))
+    valid_combinations.append(('temp', None, None, None))
+    valid_combinations.append(('temp', None, 'bathymetry', None))
+    valid_combinations.append(('temp', 'velmag', 'bathymetry', None))
+    valid_combinations.append(('temp', 'velmag', 'bathymetry', 'flow_divergence'))
+    valid_combinations.append(('temp', 'bathymetry', 'velmag', 'flow_divergence'))
 
     # -------------------------------------------------- #
     # Generate visualisations for each valid combination #
@@ -3413,7 +3420,6 @@ def generate_survey_hatch_combinations(data, variables, flow_direction, output_d
             )  # TODO: to be modfied by plotting title
         except Exception as e:
             print(f"Error generating {filename}: {e}")
-            traceback.format_exc()
             logger.exception(e)
     
 
@@ -3539,7 +3545,6 @@ def generate_all_stipple_combinations(data, variables, output_dir):
             )
         except Exception as e:
             print(f"Error generating {filename}: {e}")
-            traceback.format_exc()
             logger.exception(e)
 
 def generate_all_flow_combinations(data, variables, output_dir):
@@ -3683,7 +3688,6 @@ def generate_all_flow_combinations(data, variables, output_dir):
             )
         except Exception as e:
             print(f"Error generating {filename}: {e}")
-            traceback.format_exc()
             logger.exception(e)
 
 def main():
