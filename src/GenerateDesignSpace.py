@@ -44,8 +44,8 @@ currents_file = "metoffice_foam1_amm7_NWS_CUR_b20240103_dm20240101.nc"  # input_
 # input_netcdf3 = "ThesisTemps.nc"   # Path to input  temperature data
 temperature_dir = "/media/christian/MyPassport/data/hydrodynamic/ENWS/reanalysis2D-2024/temperature/"
 temperature_file = "metoffice_foam1_amm7_NWS_TEM_b20240103_dm20240101.nc"  # input_netcdf3
-output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_selection"
-# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowhatches"
+# output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_selection"
+output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowhatches"
 # output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_stipples"
 # output_dir = "/media/christian/My Passport/Documents/Papers/ISPRS2026/revision_flowcontours"
 
@@ -2988,8 +2988,8 @@ def generate_all_possible_mappings(data, output_dir="visualisation_outputs"):
     print("Generating visualisations for all possible mappings...")
     
     # ==== Generate all combinations for hatch visualisations ==== #
-    # generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
-    generate_survey_hatch_combinations(data, variables, flow_direction, output_dir)
+    generate_all_hatch_combinations(data, variables, flow_direction, output_dir)
+    # generate_survey_hatch_combinations(data, variables, flow_direction, output_dir)
     
     # ==== Generate all combinations for stipple visualisations ==== #
     # generate_all_stipple_combinations(data, variables, output_dir)
